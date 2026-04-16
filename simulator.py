@@ -15,14 +15,13 @@ NextStepFn = Callable[[Board, Position, List[Position], str], Move]
 EMPTY = "."
 
 # Simulation constants (edit these values directly to configure matches)
-DEFAULT_ROWS = 25
-DEFAULT_COLS = 25
-DEFAULT_MAX_TURNS = DEFAULT_COLS * DEFAULT_ROWS
+DEFAULT_ROWS = 50
+DEFAULT_COLS = 50
+DEFAULT_MAX_TURNS = 1000
 DEFAULT_REALTIME = True
-DEFAULT_FRAME_DELAY_SECONDS = 0.1
+DEFAULT_FRAME_DELAY_SECONDS = 0.0002
 DEFAULT_RENDER_MODE = "turn"  # Allowed: "turn", "move"
 DEFAULT_RENDER_BACKEND = "pygame"  # Allowed: "terminal", "pygame"
-DEFAULT_PLAYERS = ["player1", "player2", "player3", "player4"]
 MOVE_FORMAT = "absolute"  # Allowed: "absolute", "relative"
 
 PLAYER_COLORS = {
@@ -34,9 +33,20 @@ PLAYER_COLORS = {
 }
 
 
+def darken_color(
+    color: Tuple[int, int, int], factor: float = 0.72
+) -> Tuple[int, int, int]:
+    return (
+        int(color[0] * factor),
+        int(color[1] * factor),
+        int(color[2] * factor),
+    )
+
+
 @dataclass
 class PlayerState:
     player_id: str
+    player_name: str
     next_step: NextStepFn
     pos: Position
     alive: bool = True
@@ -56,10 +66,13 @@ class TerritoryWarSimulator:
         rows: int,
         cols: int,
         player_functions: Sequence[NextStepFn],
+        player_names: Sequence[str] | None = None,
         move_format: str = "absolute",
     ):
         if len(player_functions) != 4:
             raise ValueError("Exactly 4 player functions are required")
+        if player_names is not None and len(player_names) != 4:
+            raise ValueError("Exactly 4 player names are required")
         if rows < 2 or cols < 2:
             raise ValueError("Board must be at least 2x2")
         if move_format not in ("absolute", "relative"):
@@ -80,8 +93,14 @@ class TerritoryWarSimulator:
         self.players: Dict[str, PlayerState] = {}
         for i, next_step in enumerate(player_functions, start=1):
             pid = str(i)
+            pname = player_names[i - 1] if player_names is not None else f"player{i}"
             pos = corners[i - 1]
-            self.players[pid] = PlayerState(player_id=pid, next_step=next_step, pos=pos)
+            self.players[pid] = PlayerState(
+                player_id=pid,
+                player_name=pname,
+                next_step=next_step,
+                pos=pos,
+            )
             self.board[pos[0]][pos[1]] = pid
 
         self.turn = 0
@@ -148,7 +167,7 @@ class TerritoryWarSimulator:
             "board": self.board,
             "alive": {pid: p.alive for pid, p in self.players.items()},
             "positions": {pid: p.pos for pid, p in self.players.items()},
-            "territory": self.territory_count(),
+            "territory": self.territory_count_by_name(),
         }
         return result
 
@@ -172,6 +191,14 @@ class TerritoryWarSimulator:
                 if cell in counts:
                     counts[cell] += 1
         return counts
+
+    def territory_count_by_name(self) -> Dict[str, int]:
+        counts_by_id = self.territory_count()
+        counts_by_name: Dict[str, int] = {}
+        for pid in ("1", "2", "3", "4"):
+            player = self.players[pid]
+            counts_by_name[player.player_name] = counts_by_id[pid]
+        return counts_by_name
 
     def _finished(self) -> bool:
         any_alive = any(player.alive for player in self.players.values())
@@ -371,12 +398,42 @@ class PygameRenderer:
         self.rows = rows
         self.cols = cols
         self.header_height = 74
+
+        # Keep small maps clearly visible, but avoid oversized windows
+        # for larger maps like 40x40.
+        max_dim = max(rows, cols)
+        if max_dim >= 35:
+            min_board_width_px = 260
+            min_board_height_px = 260
+            max_render_cell_size = 14
+        elif max_dim >= 25:
+            min_board_width_px = 320
+            min_board_height_px = 320
+            max_render_cell_size = 18
+        else:
+            min_board_width_px = 420
+            min_board_height_px = 420
+            max_render_cell_size = 22
+
         max_board_width_px = 720
-        max_window_height_px = 760
+        max_window_height_px = 820
         max_board_height_px = max_window_height_px - self.header_height
-        size_by_width = max_board_width_px // cols
-        size_by_height = max_board_height_px // rows
-        self.cell_size = max(9, min(22, size_by_width, size_by_height))
+
+        min_size_by_width = (min_board_width_px + cols - 1) // cols
+        min_size_by_height = (min_board_height_px + rows - 1) // rows
+        min_cell_size = max(min_size_by_width, min_size_by_height)
+
+        max_size_by_width = max_board_width_px // cols
+        max_size_by_height = max_board_height_px // rows
+        max_cell_size = min(max_size_by_width, max_size_by_height)
+
+        if max_cell_size < 8:
+            self.cell_size = max_cell_size
+        else:
+            target_min_cell_size = max(8, min_cell_size)
+            self.cell_size = min(max_cell_size, max_render_cell_size)
+            self.cell_size = max(self.cell_size, target_min_cell_size)
+
         self.board_width = cols * self.cell_size
         self.board_height = rows * self.cell_size
 
@@ -415,28 +472,62 @@ class PygameRenderer:
         )
         self.screen.blit(title, (12, 10))
 
-        status = " | ".join(
-            f"P{pid}:{'ALIVE' if p.alive else 'DEAD'}" for pid, p in players.items()
-        )
-        status_text = self.small_font.render(status, True, (195, 198, 210))
-        self.screen.blit(status_text, (12, 36))
+        status_y = 36
+        status_x = 12
+        for i, pid in enumerate(("1", "2", "3", "4")):
+            player = players[pid]
+            name_text = self.small_font.render(
+                player.player_name,
+                True,
+                PLAYER_COLORS.get(pid, (195, 198, 210)),
+            )
+            self.screen.blit(name_text, (status_x, status_y))
+            status_x += name_text.get_width()
+
+            state_text = self.small_font.render(
+                f":{'ALIVE' if player.alive else 'DEAD'}",
+                True,
+                (195, 198, 210),
+            )
+            self.screen.blit(state_text, (status_x, status_y))
+            status_x += state_text.get_width()
+
+            if i < 3:
+                sep_text = self.small_font.render(" | ", True, (195, 198, 210))
+                self.screen.blit(sep_text, (status_x, status_y))
+                status_x += sep_text.get_width()
 
         scores = {"1": 0, "2": 0, "3": 0, "4": 0}
         for row in board:
             for cell in row:
                 if cell in scores:
                     scores[cell] += 1
-        score_text = self.small_font.render(
-            (
-                f"Score  P1:{scores['1']}  "
-                f"P2:{scores['2']}  "
-                f"P3:{scores['3']}  "
-                f"P4:{scores['4']}"
-            ),
-            True,
-            (215, 217, 226),
-        )
-        self.screen.blit(score_text, (12, 54))
+        score_y = 54
+        score_x = 12
+        score_label = self.small_font.render("Score  ", True, (215, 217, 226))
+        self.screen.blit(score_label, (score_x, score_y))
+        score_x += score_label.get_width()
+
+        for i, pid in enumerate(("1", "2", "3", "4")):
+            player = players[pid]
+            name_text = self.small_font.render(
+                player.player_name,
+                True,
+                PLAYER_COLORS.get(pid, (215, 217, 226)),
+            )
+            self.screen.blit(name_text, (score_x, score_y))
+            score_x += name_text.get_width()
+
+            value_text = self.small_font.render(
+                f":{scores[pid]}", True, (215, 217, 226)
+            )
+            self.screen.blit(value_text, (score_x, score_y))
+            score_x += value_text.get_width()
+
+            if i < 3:
+                sep_text = self.small_font.render("  ", True, (215, 217, 226))
+                self.screen.blit(sep_text, (score_x, score_y))
+                score_x += sep_text.get_width()
 
         for r, row in enumerate(board):
             for c, cell in enumerate(row):
@@ -448,6 +539,19 @@ class PygameRenderer:
                     color,
                     pygame.Rect(x, y, self.cell_size, self.cell_size),
                 )
+
+        # Draw current player positions with a slightly darker shade.
+        for pid, player in players.items():
+            r, c = player.pos
+            base_color = PLAYER_COLORS.get(pid, (110, 110, 110))
+            marker_color = darken_color(base_color)
+            x = c * self.cell_size
+            y = self.header_height + r * self.cell_size
+            pygame.draw.rect(
+                self.screen,
+                marker_color,
+                pygame.Rect(x, y, self.cell_size, self.cell_size),
+            )
 
         pygame.display.flip()
         return True
@@ -462,7 +566,7 @@ class PygameRenderer:
             self.pygame.time.wait(30)
 
 
-if __name__ == "__main__":
+def run_program(players):
     if DEFAULT_REALTIME:
         print(
             "Realtime ON | "
@@ -473,11 +577,12 @@ if __name__ == "__main__":
     else:
         print("Realtime OFF | running without visual delay")
 
-    p1, p2, p3, p4 = import_player_functions(DEFAULT_PLAYERS)
+    p1, p2, p3, p4 = import_player_functions(players)
     simulator = TerritoryWarSimulator(
         rows=DEFAULT_ROWS,
         cols=DEFAULT_COLS,
         player_functions=[p1, p2, p3, p4],
+        player_names=players,
         move_format=MOVE_FORMAT,
     )
     result = simulator.run(
@@ -488,6 +593,11 @@ if __name__ == "__main__":
         render_backend=DEFAULT_RENDER_BACKEND,
     )
 
+    return result
+
+
+if __name__ == "__main__":
+    result = run_program(players=["player1", "player2", "player3", "player4"])
     print(f"Turns played: {result['turns']}")
     print(f"Alive: {result['alive']}")
     print(f"Territory: {result['territory']}")

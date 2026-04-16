@@ -1,16 +1,25 @@
 from typing import List, Tuple
+import random
 
 
 def next_step(
-    current_board: List[List[str]],
+    board: List[List[str]],
     current_pos: Tuple[int, int],
-    all_player_positions: List[Tuple[int, int]],
-    your_character: str,
+    players: List[Tuple[int, int]],
+    your_id: str,
 ) -> Tuple[int, int]:
-    # Implementa la lógica para determinar el siguiente paso del juego
-    # Puedes usar la información del tablero actual y la posición actual para tomar una decisión
 
-    return (
-        current_pos[0],
-        current_pos[1] - 1,
-    )
+    n = len(board)
+    m = len(board[0])
+
+    moves = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+    random.shuffle(moves)
+
+    for dx, dy in moves:
+        nx = current_pos[0] + dx
+        ny = current_pos[1] + dy
+
+        if 0 <= nx < n and 0 <= ny < m and board[nx][ny] == ".":
+            return (nx, ny)
+
+    return current_pos
