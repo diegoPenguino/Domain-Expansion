@@ -15,14 +15,23 @@ NextStepFn = Callable[[Board, Position, List[Position], str], Move]
 EMPTY = "."
 
 # Simulation constants (edit these values directly to configure matches)
-DEFAULT_ROWS = 40
-DEFAULT_COLS = 40
+DEFAULT_ROWS = 25
+DEFAULT_COLS = 25
 DEFAULT_MAX_TURNS = DEFAULT_COLS * DEFAULT_ROWS
 DEFAULT_REALTIME = True
-DEFAULT_FRAME_DELAY_SECONDS = 0.2
+DEFAULT_FRAME_DELAY_SECONDS = 0.1
 DEFAULT_RENDER_MODE = "turn"  # Allowed: "turn", "move"
+DEFAULT_RENDER_BACKEND = "pygame"  # Allowed: "terminal", "pygame"
 DEFAULT_PLAYERS = ["player1", "player2", "player3", "player4"]
 MOVE_FORMAT = "absolute"  # Allowed: "absolute", "relative"
+
+PLAYER_COLORS = {
+    EMPTY: (22, 22, 26),
+    "1": (232, 78, 65),
+    "2": (248, 171, 72),
+    "3": (78, 173, 96),
+    "4": (61, 149, 214),
+}
 
 
 @dataclass
@@ -83,14 +92,27 @@ class TerritoryWarSimulator:
         realtime: bool = False,
         frame_delay: float = 0.12,
         render_mode: str = "turn",
+        render_backend: str = "terminal",
     ) -> SimulationResult:
         if frame_delay < 0:
             raise ValueError("frame_delay must be >= 0")
         if render_mode not in ("turn", "move"):
             raise ValueError("render_mode must be 'turn' or 'move'")
+        if render_backend not in ("terminal", "pygame"):
+            raise ValueError("render_backend must be 'terminal' or 'pygame'")
 
-        if realtime:
-            render_terminal(self.board, self.turn, self.players, clear_screen=True)
+        pygame_renderer: PygameRenderer | None = None
+        render_enabled = realtime
+
+        if render_enabled and render_backend == "pygame":
+            try:
+                pygame_renderer = PygameRenderer(self.rows, self.cols)
+            except ImportError:
+                print("pygame is not installed. Falling back to terminal renderer.")
+                render_backend = "terminal"
+
+        if render_enabled:
+            render_enabled = self._render_frame(render_backend, pygame_renderer)
             time.sleep(frame_delay)
 
         for _ in range(max_turns):
@@ -103,23 +125,23 @@ class TerritoryWarSimulator:
                 if player.alive:
                     self._play_turn(player)
 
-                if realtime and render_mode == "move":
-                    render_terminal(
-                        self.board,
-                        self.turn,
-                        self.players,
-                        clear_screen=True,
-                    )
+                if render_enabled and render_mode == "move":
+                    render_enabled = self._render_frame(render_backend, pygame_renderer)
                     time.sleep(frame_delay)
 
-            if realtime and render_mode == "turn":
-                render_terminal(
-                    self.board,
-                    self.turn,
-                    self.players,
-                    clear_screen=True,
-                )
+            if render_enabled and render_mode == "turn":
+                render_enabled = self._render_frame(render_backend, pygame_renderer)
                 time.sleep(frame_delay)
+
+        if (
+            render_enabled
+            and render_backend == "pygame"
+            and pygame_renderer is not None
+        ):
+            pygame_renderer.wait_until_closed(self.board, self.turn, self.players)
+
+        if pygame_renderer is not None:
+            pygame_renderer.close()
 
         result: SimulationResult = {
             "turns": self.turn,
@@ -129,6 +151,19 @@ class TerritoryWarSimulator:
             "territory": self.territory_count(),
         }
         return result
+
+    def _render_frame(
+        self,
+        render_backend: str,
+        pygame_renderer: PygameRenderer | None,
+    ) -> bool:
+        if render_backend == "terminal":
+            render_terminal(self.board, self.turn, self.players, clear_screen=True)
+            return True
+
+        if pygame_renderer is None:
+            return False
+        return pygame_renderer.render(self.board, self.turn, self.players)
 
     def territory_count(self) -> Dict[str, int]:
         counts = {"1": 0, "2": 0, "3": 0, "4": 0}
@@ -323,10 +358,117 @@ def render_terminal(
     print(flush=True)
 
 
+class PygameRenderer:
+    def __init__(self, rows: int, cols: int):
+        try:
+            import pygame
+        except ImportError as exc:
+            raise ImportError("Install pygame with: pip install pygame") from exc
+
+        self.pygame = pygame
+        pygame.init()
+
+        self.rows = rows
+        self.cols = cols
+        self.header_height = 74
+        max_board_width_px = 720
+        max_window_height_px = 760
+        max_board_height_px = max_window_height_px - self.header_height
+        size_by_width = max_board_width_px // cols
+        size_by_height = max_board_height_px // rows
+        self.cell_size = max(9, min(22, size_by_width, size_by_height))
+        self.board_width = cols * self.cell_size
+        self.board_height = rows * self.cell_size
+
+        self.screen = pygame.display.set_mode(
+            (self.board_width, self.board_height + self.header_height)
+        )
+        pygame.display.set_caption("Territory War Simulator")
+        self.font = pygame.font.SysFont("consolas", 20)
+        self.small_font = pygame.font.SysFont("consolas", 16)
+
+    def close(self) -> None:
+        self.pygame.quit()
+
+    def render(
+        self,
+        board: Board,
+        turn: int,
+        players: Dict[str, PlayerState],
+    ) -> bool:
+        pygame = self.pygame
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return False
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                return False
+
+        self.screen.fill((12, 12, 14))
+        pygame.draw.rect(
+            self.screen,
+            (28, 29, 35),
+            pygame.Rect(0, 0, self.board_width, self.header_height),
+        )
+
+        title = self.font.render(
+            f"Territory War  |  Turn {turn}", True, (230, 230, 236)
+        )
+        self.screen.blit(title, (12, 10))
+
+        status = " | ".join(
+            f"P{pid}:{'ALIVE' if p.alive else 'DEAD'}" for pid, p in players.items()
+        )
+        status_text = self.small_font.render(status, True, (195, 198, 210))
+        self.screen.blit(status_text, (12, 36))
+
+        scores = {"1": 0, "2": 0, "3": 0, "4": 0}
+        for row in board:
+            for cell in row:
+                if cell in scores:
+                    scores[cell] += 1
+        score_text = self.small_font.render(
+            (
+                f"Score  P1:{scores['1']}  "
+                f"P2:{scores['2']}  "
+                f"P3:{scores['3']}  "
+                f"P4:{scores['4']}"
+            ),
+            True,
+            (215, 217, 226),
+        )
+        self.screen.blit(score_text, (12, 54))
+
+        for r, row in enumerate(board):
+            for c, cell in enumerate(row):
+                color = PLAYER_COLORS.get(cell, (110, 110, 110))
+                x = c * self.cell_size
+                y = self.header_height + r * self.cell_size
+                pygame.draw.rect(
+                    self.screen,
+                    color,
+                    pygame.Rect(x, y, self.cell_size, self.cell_size),
+                )
+
+        pygame.display.flip()
+        return True
+
+    def wait_until_closed(
+        self,
+        board: Board,
+        turn: int,
+        players: Dict[str, PlayerState],
+    ) -> None:
+        while self.render(board, turn, players):
+            self.pygame.time.wait(30)
+
+
 if __name__ == "__main__":
     if DEFAULT_REALTIME:
         print(
-            f"Realtime ON | render_mode={DEFAULT_RENDER_MODE} | frame_delay={DEFAULT_FRAME_DELAY_SECONDS:.3f}s"
+            "Realtime ON | "
+            f"render_mode={DEFAULT_RENDER_MODE} | "
+            f"render_backend={DEFAULT_RENDER_BACKEND} | "
+            f"frame_delay={DEFAULT_FRAME_DELAY_SECONDS:.3f}s"
         )
     else:
         print("Realtime OFF | running without visual delay")
@@ -343,6 +485,7 @@ if __name__ == "__main__":
         realtime=DEFAULT_REALTIME,
         frame_delay=DEFAULT_FRAME_DELAY_SECONDS,
         render_mode=DEFAULT_RENDER_MODE,
+        render_backend=DEFAULT_RENDER_BACKEND,
     )
 
     print(f"Turns played: {result['turns']}")
