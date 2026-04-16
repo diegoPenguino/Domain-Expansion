@@ -10,13 +10,13 @@ from typing import Callable, Dict, List, Sequence, Tuple, TypedDict, cast
 Board = List[List[str]]
 Position = Tuple[int, int]
 Move = Tuple[int, int]
-NextStepFn = Callable[[Board, Position], Move]
+NextStepFn = Callable[[Board, Position, List[Position], str], Move]
 
 EMPTY = "."
 
 # Simulation constants (edit these values directly to configure matches)
-DEFAULT_ROWS = 20
-DEFAULT_COLS = 20
+DEFAULT_ROWS = 40
+DEFAULT_COLS = 40
 DEFAULT_MAX_TURNS = DEFAULT_COLS * DEFAULT_ROWS
 DEFAULT_REALTIME = True
 DEFAULT_FRAME_DELAY_SECONDS = 0.2
@@ -172,8 +172,14 @@ class TerritoryWarSimulator:
 
     def _safe_next_step(self, player: PlayerState) -> Move | None:
         board_snapshot = [row[:] for row in self.board]
+        all_player_positions = [self.players[pid].pos for pid in ("1", "2", "3", "4")]
         try:
-            move = player.next_step(board_snapshot, player.pos)
+            move = player.next_step(
+                board_snapshot,
+                player.pos,
+                all_player_positions,
+                player.player_id,
+            )
         except Exception:
             return None
 
