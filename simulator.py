@@ -325,7 +325,7 @@ def import_player_functions(
         raise ValueError("Exactly 4 module names are required")
 
     def load(module_name: str) -> NextStepFn:
-        module = import_module(module_name)
+        module = import_module(f"codes.{module_name}")
         next_step = getattr(module, "next_step", None)
         if next_step is None or not callable(next_step):
             raise AttributeError(
