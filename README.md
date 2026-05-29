@@ -30,7 +30,7 @@ Así luce una partida en tiempo real ejecutada con la interfaz gráfica de `pyga
 
 ## 🛠️ Cómo implementar tu propio Bot
 
-Para competir, cada jugador debe crear un archivo Python (por ejemplo, `mi_bot.py`) dentro del directorio `codes/` con la estructura básica provista en [player1.py](file:///c:/Users/diego/Documents/GitHub/domain_expansion/codes/player1.py). 
+Para competir, cada jugador debe crear un archivo Python (por ejemplo, `mi_bot.py`) dentro del directorio `codes/` con la estructura básica provista en [player1.py](./codes/player1.py). 
 
 Solo debes implementar la función **`next_step`**:
 
@@ -70,7 +70,7 @@ def next_step(
 ```
 
 > [!TIP]
-> Puedes revisar ejemplos de bots ya implementados en el directorio `codes/` como [diego.py](file:///c:/Users/diego/Documents/GitHub/domain_expansion/codes/diego.py), [ignacio.py](file:///c:/Users/diego/Documents/GitHub/domain_expansion/codes/ignacio.py) o [mia.py](file:///c:/Users/diego/Documents/GitHub/domain_expansion/codes/mia.py) para inspirar tus estrategias.
+> Puedes revisar ejemplos de bots ya implementados en el directorio `codes/` como [diego.py](./codes/diego.py), [ignacio.py](./codes/ignacio.py) o [mia.py](./codes/mia.py) para inspirar tus estrategias.
 
 ---
 
