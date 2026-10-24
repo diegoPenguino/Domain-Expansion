@@ -31,6 +31,11 @@ const COLORS = {
   4: [61, 149, 214],
 };
 const MARKER_FACTOR = 0.72;
+// Overlays on the board: how many turns a capture stays lit, and how many past steps
+// of each bot are marked.
+const FLASH_TURNS = 8;
+const TRAIL_STEPS = 12;
+const EMPTY_CSS = "rgb(22, 22, 26)";
 
 const CHALLENGE_GROUP = "Reto";
 const REPO_GROUP = "OBI-CAMP 2026";
@@ -65,6 +70,7 @@ const els = {
   toggle: $("toggle"),
   scrub: $("scrub"),
   turn: $("turn"),
+  chart: $("chart"),
   codeDialog: $("code-dialog"),
   codeTitle: $("code-title"),
   codeBody: $("code-body"),
@@ -344,6 +350,7 @@ async function startMatch(event) {
   state.carry = 0;
   els.boardMsg.hidden = true;
   els.playback.hidden = false;
+  els.chart.hidden = false;
   els.play.textContent = "Reiniciar";
   setStatus("Simulando…");
   setPlaying(true);
@@ -438,6 +445,8 @@ function addFrame(frame) {
   frame.players.forEach((p, i) => {
     if (!p.alive && state.deathTurns[i] === null) state.deathTurns[i] = frame.turn;
   });
+  frame.counts = countCells(frame.board);
+  frame.captured = capturedCells(state.frames[state.frames.length - 1], frame);
   state.frames.push(frame);
   els.scrub.max = String(state.frames.length - 1);
   if (state.frames.length === 1) showFrame(0);
@@ -485,7 +494,8 @@ function showFrame(index) {
   state.playhead = index;
   els.scrub.value = String(index);
   els.turn.textContent = `Turno ${frame.turn}`;
-  drawBoard(frame.board, frame.players);
+  drawBoard(frame.board, frame.players, index);
+  drawChart(index);
   renderScores(frame);
 }
 
@@ -510,27 +520,45 @@ function emptyBoard() {
   return ".".repeat(ROWS * COLS);
 }
 
-function drawBoard(board, players) {
+function countCells(board) {
+  const counts = [0, 0, 0, 0];
+  for (const c of board) if (c !== ".") counts[Number(c) - 1] += 1;
+  return counts;
+}
+
+// Cells that went from empty to a player's color without the player stepping on them:
+// the area a loop just closed.
+function capturedCells(prev, frame) {
+  if (!prev) return [];
+  const heads = new Set(frame.players.map((p) => p.pos[0] * COLS + p.pos[1]));
+  const cells = [];
+  for (let i = 0; i < ROWS * COLS; i++) {
+    if (prev.board[i] === "." && frame.board[i] !== "." && !heads.has(i)) cells.push(i);
+  }
+  return cells;
+}
+
+// Fits a canvas's backing store to its CSS size times the pixel ratio.
+function fitCanvas(canvas, width, height) {
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+  return canvas.getContext("2d");
+}
+
+// index: the frame being shown, used to draw captures and trails from earlier frames.
+function drawBoard(board, players, index = null) {
   const canvas = els.canvas;
   const cssSize = canvas.clientWidth || 600;
   const cell = Math.max(1, Math.floor((cssSize * (devicePixelRatio || 1)) / COLS));
   const size = cell * COLS;
-  if (canvas.width !== size) {
-    canvas.width = size;
-    canvas.height = cell * ROWS;
-  }
+  const ctx = fitCanvas(canvas, size, cell * ROWS);
 
-  const ctx = canvas.getContext("2d");
   const image = ctx.createImageData(COLS, ROWS);
   for (let i = 0; i < ROWS * COLS; i++) {
     const [r, g, b] = COLORS[board[i]] || [110, 110, 110];
     image.data.set([r, g, b, 255], i * 4);
-  }
-  if (players) {
-    players.forEach((p, i) => {
-      const [r, g, b] = COLORS[i + 1].map((v) => Math.floor(v * MARKER_FACTOR));
-      image.data.set([r, g, b, 255], (p.pos[0] * COLS + p.pos[1]) * 4);
-    });
   }
 
   // Draw at one pixel per cell, then scale up without smoothing.
@@ -543,11 +571,93 @@ function drawBoard(board, players) {
   small.getContext("2d").putImageData(image, 0, 0);
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(small, 0, 0, size, cell * ROWS);
+
+  if (index !== null) {
+    drawCaptures(ctx, cell, index);
+    drawTrails(ctx, cell, index);
+  }
+  if (players) drawHeads(ctx, cell, players);
+}
+
+// Recent captures glow white and fade over FLASH_TURNS turns.
+function drawCaptures(ctx, cell, index) {
+  for (let age = FLASH_TURNS - 1; age >= 0; age--) {
+    const frame = state.frames[index - age];
+    if (!frame || !frame.captured.length) continue;
+    ctx.fillStyle = `rgba(255, 255, 255, ${0.55 * (1 - age / FLASH_TURNS)})`;
+    for (const i of frame.captured) {
+      ctx.fillRect((i % COLS) * cell, Math.floor(i / COLS) * cell, cell, cell);
+    }
+  }
+}
+
+// A dot on each of the last TRAIL_STEPS cells a bot stood on, stronger when recent.
+function drawTrails(ctx, cell, index) {
+  const dot = Math.max(1, Math.round(cell * 0.34));
+  const inset = (cell - dot) / 2;
+  for (let back = TRAIL_STEPS; back >= 1; back--) {
+    const frame = state.frames[index - back];
+    if (!frame) continue;
+    ctx.fillStyle = `rgba(255, 255, 255, ${0.15 + 0.45 * (1 - back / TRAIL_STEPS)})`;
+    for (const p of frame.players) {
+      ctx.fillRect(p.pos[1] * cell + inset, p.pos[0] * cell + inset, dot, dot);
+    }
+  }
+}
+
+// Each bot's current cell in a darker shade; living bots also get a white outline.
+function drawHeads(ctx, cell, players) {
+  const line = Math.max(1, Math.round(cell * 0.14));
+  players.forEach((p, i) => {
+    const x = p.pos[1] * cell;
+    const y = p.pos[0] * cell;
+    const [r, g, b] = COLORS[i + 1].map((v) => Math.floor(v * MARKER_FACTOR));
+    ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+    ctx.fillRect(x, y, cell, cell);
+    if (!p.alive) return;
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = line;
+    ctx.strokeRect(x + line / 2, y + line / 2, cell - line, cell - line);
+  });
+}
+
+// Cells per bot over the turns played so far, up to the frame being shown.
+function drawChart(index) {
+  const canvas = els.chart;
+  const dpr = devicePixelRatio || 1;
+  const w = Math.round((canvas.clientWidth || 600) * dpr);
+  const h = Math.round((canvas.clientHeight || 120) * dpr);
+  const ctx = fitCanvas(canvas, w, h);
+  ctx.fillStyle = EMPTY_CSS;
+  ctx.fillRect(0, 0, w, h);
+
+  const frames = state.frames;
+  if (!frames.length) return;
+  const pad = 10 * dpr;
+  const lastX = Math.max(1, frames.length - 1);
+  let top = 1;
+  for (const f of frames) top = Math.max(top, ...f.counts);
+  const x = (k) => pad + (k / lastX) * (w - 2 * pad);
+  const y = (n) => h - pad - (n / top) * (h - 2 * pad);
+
+  ctx.lineWidth = 2 * dpr;
+  ctx.lineJoin = "round";
+  for (let p = 0; p < 4; p++) {
+    const [r, g, b] = COLORS[p + 1];
+    ctx.strokeStyle = `rgb(${r}, ${g}, ${b})`;
+    ctx.beginPath();
+    for (let k = 0; k <= index; k++) {
+      const px = x(k);
+      const py = y(frames[k].counts[p]);
+      if (k === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
 }
 
 function renderScores(frame) {
-  const counts = [0, 0, 0, 0];
-  for (const c of frame.board) if (c !== ".") counts[Number(c) - 1] += 1;
+  const counts = frame.counts;
   const best = Math.max(...counts);
 
   const items = state.names.map((name, i) => {
@@ -609,8 +719,11 @@ for (const button of document.querySelectorAll("dialog [data-close]")) {
 els.toggle.addEventListener("click", onToggle);
 els.scrub.addEventListener("input", onScrub);
 addEventListener("resize", () => {
-  const frame = state.frames[state.playhead];
-  drawBoard(frame ? frame.board : emptyBoard(), frame ? frame.players : null);
+  if (state.frames[state.playhead]) {
+    showFrame(state.playhead);
+  } else {
+    drawBoard(emptyBoard(), null);
+  }
 });
 
 init();
