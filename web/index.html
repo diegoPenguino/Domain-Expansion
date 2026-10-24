@@ -41,6 +41,7 @@
       <form id="setup">
         <fieldset class="seats">
           <legend>Bots</legend>
+          <p class="challenge-note">Reto: Claude Opus 5.5 empieza en el primer lugar y su código es secreto. ¿Puedes ganarle?</p>
           <div id="seats"></div>
         </fieldset>
 
@@ -87,6 +88,7 @@
     <h2>Cómo se juega</h2>
     <p>En cada turno, cada bot avanza una casilla en horizontal o vertical. Solo puede pisar casillas vacías o propias: si sale del tablero, pisa territorio ajeno, hace un movimiento inválido, su código falla o tarda más de 2 segundos en decidir, queda eliminado. Gana quien tenga más casillas al final, después de 1000 turnos o cuando el tablero se llena.</p>
     <p>Un bot es una función <code>next_step</code> que recibe el tablero y su posición, y devuelve la casilla a la que quiere moverse. Los bots del grupo OBI-CAMP 2026 son los del <a href="https://github.com/diegoPenguino/Domain-Expansion">repositorio</a>, escritos por participantes del campamento; los de Comunidad los subieron visitantes de esta página.</p>
+    <p>El grupo Reto tiene un bot escrito por Claude Opus 5.5. Puedes ver el código de todos los demás bots, pero el suyo no. Sube un bot en “Tus bots”, ponlo contra Claude y prueba en distintas esquinas.</p>
   </section>
 
   <dialog class="dialog" id="code-dialog" aria-labelledby="code-title">
@@ -94,7 +96,8 @@
       <h2 id="code-title">Código</h2>
       <button class="btn btn--ghost" type="button" data-close>Cerrar</button>
     </div>
-    <pre class="code"><code id="code-body"></code></pre>
+    <p class="code-secret" id="code-secret" hidden></p>
+    <pre class="code" id="code-box"><code id="code-body"></code></pre>
   </dialog>
 
   <dialog class="dialog" id="editor" aria-labelledby="editor-title">

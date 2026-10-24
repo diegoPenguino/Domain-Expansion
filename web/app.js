@@ -1,7 +1,8 @@
 // Play page: picks the bots, sends their code to the sandboxed runner, and plays back the
 // frames it returns. This page never runs bot code itself.
 //
-// Bots come from two places: the repo's codes/ folder ("repo:<name>") and the ones people
+// Bots come from three places: the repo's codes/ folder ("repo:<name>"), the challenge
+// bots in challenge/ ("challenge:<name>", whose code is not shown), and the ones people
 // upload ("user:<uid>/<slot>"), which account.js loads from Firestore and hands over
 // through the `game` object at the end of this file.
 
@@ -31,7 +32,10 @@ const COLORS = {
 };
 const MARKER_FACTOR = 0.72;
 
+const CHALLENGE_GROUP = "Reto";
 const REPO_GROUP = "OBI-CAMP 2026";
+// Display names for challenge bots; the first one starts in seat 1.
+const CHALLENGE_NAMES = { claude_opus: "Claude Opus 5.5" };
 const COMMUNITY_GROUP = "Comunidad";
 
 // Before an uploaded bot is saved, it plays a few turns against these.
@@ -64,12 +68,15 @@ const els = {
   codeDialog: $("code-dialog"),
   codeTitle: $("code-title"),
   codeBody: $("code-body"),
+  codeBox: $("code-box"),
+  codeSecret: $("code-secret"),
 };
 
 const state = {
   engine: null,
   workerSources: null,
   bots: [],
+  challenge: [],
   userBots: [],
   codeCache: new Map(),
   runnerReady: false,
@@ -93,6 +100,14 @@ async function fetchText(url) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${url}: ${res.status}`);
   return res.text();
+}
+
+function challengeCode(name) {
+  const key = `challenge:${name}`;
+  if (!state.codeCache.has(key)) {
+    state.codeCache.set(key, fetchText(versioned(`challenge/${encodeURIComponent(name)}.py`)));
+  }
+  return state.codeCache.get(key);
 }
 
 async function botCode(name) {
@@ -125,6 +140,7 @@ async function init() {
       fetchText(versioned("bot-worker.js")),
     ]);
     state.bots = manifest.bots;
+    state.challenge = manifest.challenge || [];
     state.engine = engine;
     state.workerSources = { engineWorker, botWorker };
   } catch (err) {
@@ -179,13 +195,17 @@ function renderSeats() {
     row.append(swatch, label, select, view);
     els.seats.append(row);
     const name = state.bots.includes(fallback) ? fallback : state.bots[i % state.bots.length];
-    fillSeat(select, `repo:${name}`);
+    fillSeat(select, i === 0 && state.challenge.length ? `challenge:${state.challenge[0]}` : `repo:${name}`);
   });
 }
 
 // Rebuilds a seat's options and keeps `wanted` selected if it still exists.
 function fillSeat(select, wanted) {
-  const groups = [[REPO_GROUP, state.bots.map((name) => [`repo:${name}`, name])]];
+  const groups = [];
+  if (state.challenge.length) {
+    groups.push([CHALLENGE_GROUP, state.challenge.map((name) => [`challenge:${name}`, challengeLabel(name)])]);
+  }
+  groups.push([REPO_GROUP, state.bots.map((name) => [`repo:${name}`, name])]);
   if (state.userBots.length) {
     groups.push([COMMUNITY_GROUP, state.userBots.map((bot) => [`user:${bot.id}`, botLabel(bot)])]);
   }
@@ -206,13 +226,21 @@ function fillSeat(select, wanted) {
   if (select.value !== wanted) select.selectedIndex = 0;
 }
 
+function challengeLabel(name) {
+  return CHALLENGE_NAMES[name] || name;
+}
+
 function botLabel(bot) {
   return `${bot.name} — ${bot.ownerName}`;
 }
 
-// What a seat's value refers to: {name, label, code: Promise<string>}, or null if an
-// uploaded bot was deleted.
+// What a seat's value refers to: {name, label, code: Promise<string>, secret?}, or null if
+// an uploaded bot was deleted.
 function seatBot(value) {
+  if (value.startsWith("challenge:")) {
+    const name = value.slice("challenge:".length);
+    return { name, label: challengeLabel(name), code: challengeCode(name), secret: true };
+  }
   if (value.startsWith("user:")) {
     const bot = state.userBots.find((b) => `user:${b.id}` === value);
     return bot ? { name: bot.name, label: botLabel(bot), code: Promise.resolve(bot.code) } : null;
@@ -225,6 +253,15 @@ async function showCode(value) {
   const bot = seatBot(value);
   if (!bot) return;
   els.codeTitle.textContent = bot.label;
+  els.codeSecret.hidden = !bot.secret;
+  els.codeBox.hidden = !!bot.secret;
+  if (bot.secret) {
+    els.codeSecret.textContent =
+      "Es el único bot con el código secreto. Lo escribió Claude Opus 5.5 y gana más del 90 % " +
+      "de sus partidas contra los bots del OBI-CAMP. ¿Puedes escribir uno que le gane sin ver cómo juega?";
+    els.codeDialog.showModal();
+    return;
+  }
   els.codeBody.textContent = "Cargando…";
   els.codeDialog.showModal();
   try {

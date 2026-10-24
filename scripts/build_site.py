@@ -32,13 +32,22 @@ def main() -> None:
         shutil.copy2(path, bots_out / path.name)
         names.append(path.stem)
 
-    (OUT / "bots.json").write_text(json.dumps({"bots": names}, indent=2) + "\n")
+    # Challenge bots: only their compiled loader is public (scripts/compile_challenge.py).
+    challenge_out = OUT / "challenge"
+    challenge_out.mkdir()
+    challenge = []
+    for path in sorted((ROOT / "challenge").glob("*.py")):
+        shutil.copy2(path, challenge_out / path.name)
+        challenge.append(path.stem)
+
+    manifest = {"bots": names, "challenge": challenge}
+    (OUT / "bots.json").write_text(json.dumps(manifest, indent=2) + "\n")
 
     version = site_hash()
     for name in VERSIONED:
         path = OUT / name
         path.write_text(path.read_text(encoding="utf-8").replace(PLACEHOLDER, version), encoding="utf-8")
-    print(f"Built {OUT.relative_to(ROOT)}/ with {len(names)} bots, version {version}")
+    print(f"Built {OUT.relative_to(ROOT)}/ with {len(names)} bots, {len(challenge)} challenge, version {version}")
 
 
 def site_hash() -> str:

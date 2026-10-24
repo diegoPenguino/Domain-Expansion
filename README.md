@@ -138,6 +138,7 @@ El juego también corre en el navegador, en [penguino.space/Domain-Expansion](ht
 
 - `web/` tiene la página. Python corre con [Pyodide](https://pyodide.org) dentro de un iframe con `sandbox`, así el código de los bots no puede leer nada del sitio. El motor corre en un worker y cada bot en otro: un bot que tarda más de 2 segundos en una jugada (o 5 en cargar) queda eliminado y los demás siguen.
 - `web/account.js` guarda los bots subidos en Firestore (`users/{uid}/bots/{slot}`), en el mismo proyecto de Firebase que los comentarios de penguino.space. Las reglas que los protegen están en el repo de la web, en `firebase/firestore.rules`. Antes de guardar, el bot juega 10 turnos de prueba: si falla, se pasa del tiempo o devuelve algo inválido, no se guarda.
+- `challenge/` tiene los bots del grupo "Reto". Su código fuente no está en este repo: `scripts/compile_challenge.py` lo compila a bytecode de Python 3.13 sin comentarios y escribe aquí un archivo que lo ejecuta. Juega igual, pero no se puede leer a simple vista (con el módulo `dis` sí se puede desensamblar; no es cifrado).
 - `scripts/build_site.py` arma `_site/` con la página, `simulator.py`, los bots y la lista `bots.json`.
 - El workflow `.github/workflows/pages.yml` corre los tests y, en `master`, publica `_site/` en GitHub Pages.
 
