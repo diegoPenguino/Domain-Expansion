@@ -8,6 +8,8 @@
 // opaque origin, so it cannot start a worker from a URL on the site, only from a blob.
 
 const SEATS = 4;
+// Must match the page's VERSION; scripts/build_site.py writes the same hash in both.
+const VERSION = "__VERSION__";
 
 let sources = null;
 let engine = null;
@@ -132,6 +134,12 @@ addEventListener("message", (event) => {
   if (event.source !== parent) return;
   const msg = event.data;
   if (msg.type === "boot") {
+    // A page and runner from different deploys speak different protocols; starting
+    // workers anyway would leave the page waiting forever.
+    if (msg.version !== VERSION || !msg.engineWorker || !msg.botWorker) {
+      toParent({ type: "error", message: "La página se actualizó mientras la cargabas. Recárgala para usar la versión nueva." });
+      return;
+    }
     sources = { engine: msg.engineWorker, bot: msg.botWorker };
     startEngine();
     for (let i = 0; i < SEATS; i++) spawnSeat(i);

@@ -5,6 +5,14 @@
 // upload ("user:<uid>/<slot>"), which account.js loads from Firestore and hands over
 // through the `game` object at the end of this file.
 
+// scripts/build_site.py replaces this with a hash of the site's files. Every URL below
+// carries it, so a visit never mixes files from two deploys (Cloudflare tells browsers to
+// keep .js files for hours).
+const VERSION = "__VERSION__";
+const versioned = (path) => `${path}?v=${VERSION}`;
+// How long Python may take to load before the page says something is wrong.
+const LOAD_WARNING_MS = 60000;
+
 const ROWS = 50;
 const COLS = 50;
 const MAX_TURNS = 1000;
@@ -89,7 +97,7 @@ async function fetchText(url) {
 
 async function botCode(name) {
   if (!state.codeCache.has(name)) {
-    state.codeCache.set(name, fetchText(`codes/${encodeURIComponent(name)}.py`));
+    state.codeCache.set(name, fetchText(versioned(`codes/${encodeURIComponent(name)}.py`)));
   }
   return state.codeCache.get(name);
 }
@@ -98,7 +106,7 @@ async function botCode(name) {
 // cannot arrive before anyone is listening.
 function createRunner() {
   const iframe = document.createElement("iframe");
-  iframe.src = "runner.html";
+  iframe.src = versioned("runner.html");
   iframe.sandbox = "allow-scripts";
   iframe.title = "Motor del juego";
   iframe.hidden = true;
@@ -111,10 +119,10 @@ async function init() {
   createRunner();
   try {
     const [manifest, engine, engineWorker, botWorker] = await Promise.all([
-      fetchText("bots.json").then(JSON.parse),
-      fetchText("simulator.py"),
-      fetchText("engine-worker.js"),
-      fetchText("bot-worker.js"),
+      fetchText(versioned("bots.json")).then(JSON.parse),
+      fetchText(versioned("simulator.py")),
+      fetchText(versioned("engine-worker.js")),
+      fetchText(versioned("bot-worker.js")),
     ]);
     state.bots = manifest.bots;
     state.engine = engine;
@@ -128,11 +136,16 @@ async function init() {
   bootRunner();
   drawBoard(emptyBoard(), null);
   els.boardMsg.textContent = "Cargando Python…";
+  setTimeout(() => {
+    if (state.pythonReady || els.status.classList.contains("is-error")) return;
+    setStatus("Python no termina de cargar. Recarga la página; si sigue igual, prueba con otro navegador.", true);
+    els.boardMsg.textContent = "Python no termina de cargar";
+  }, LOAD_WARNING_MS);
 }
 
 function bootRunner() {
   if (state.runnerReady && state.workerSources) {
-    els.runner.contentWindow.postMessage({ type: "boot", ...state.workerSources }, "*");
+    els.runner.contentWindow.postMessage({ type: "boot", version: VERSION, ...state.workerSources }, "*");
   }
 }
 
@@ -260,6 +273,7 @@ function onRunnerMessage(event) {
     state.simulating = false;
     els.play.textContent = "Jugar";
     setStatus(msg.message, true);
+    if (!state.frames.length) els.boardMsg.textContent = "No se pudo iniciar el juego";
   }
 }
 
