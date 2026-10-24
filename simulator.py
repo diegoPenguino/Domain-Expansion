@@ -69,6 +69,23 @@ class BotLoadError(Exception):
     """A bot's code could not be run or does not define next_step."""
 
 
+def error_reason(exc: BaseException) -> str:
+    """Death reason for a bot whose code raised exc."""
+    return f"error: {type(exc).__name__}: {exc}"
+
+
+def invalid_move_reason(move: object) -> str | None:
+    """Death reason if move is not a tuple of two ints, else None."""
+    if (
+        not isinstance(move, tuple)
+        or len(move) != 2
+        or not isinstance(move[0], int)
+        or not isinstance(move[1], int)
+    ):
+        return f"invalid move: returned {move!r}"
+    return None
+
+
 class TerritoryWarSimulator:
     def __init__(
         self,
@@ -173,11 +190,21 @@ class TerritoryWarSimulator:
 
     def step(self) -> bool:
         """Play one full turn. Returns False, without playing, once the game is over."""
+        if not self.start_turn():
+            return False
+        for pid in PLAYER_IDS:
+            self.play_move(pid)
+        return True
+
+    def start_turn(self) -> bool:
+        """Advance the turn counter. Returns False once the game is over.
+
+        step() uses it; a caller whose bots answer asynchronously (the web
+        version) calls it and then apply_move for each alive player.
+        """
         if self.is_finished():
             return False
         self.turn += 1
-        for pid in PLAYER_IDS:
-            self.play_move(pid)
         return True
 
     def result(self) -> SimulationResult:
@@ -229,64 +256,61 @@ class TerritoryWarSimulator:
         if self.players[pid].alive:
             self.apply_move(pid, self.request_move(pid))
 
-    def request_move(self, pid: str) -> object:
-        """Call the bot. Returns whatever it returned, or the exception it raised."""
+    def bot_input(self, pid: str) -> Tuple[Board, Position, List[Position], str]:
+        """The arguments next_step receives, with a copy of the board."""
         player = self.players[pid]
         board_snapshot = [row[:] for row in self.board]
         all_player_positions = [self.players[p].pos for p in PLAYER_IDS]
+        return board_snapshot, player.pos, all_player_positions, player.player_id
+
+    def request_move(self, pid: str) -> object:
+        """Call the bot. Returns whatever it returned, or the exception it raised."""
         try:
-            return player.next_step(
-                board_snapshot,
-                player.pos,
-                all_player_positions,
-                player.player_id,
-            )
+            return self.players[pid].next_step(*self.bot_input(pid))
         except Exception as exc:
             return exc
 
     def apply_move(self, pid: str, move: object) -> None:
         """Validate a move and update the board, or eliminate the player.
 
-        Kept apart from request_move so a recorded move can be applied again
-        without calling the bot.
+        Kept apart from request_move so the move can come from a bot that runs
+        somewhere else, like a separate worker in the web version.
         """
         player = self.players[pid]
 
         if isinstance(move, Exception):
-            self._eliminate(player, f"error: {type(move).__name__}: {move}")
+            self.eliminate(pid, error_reason(move))
             return
 
-        if (
-            not isinstance(move, tuple)
-            or len(move) != 2
-            or not isinstance(move[0], int)
-            or not isinstance(move[1], int)
-        ):
-            self._eliminate(player, f"invalid move: returned {move!r}")
+        reason = invalid_move_reason(move)
+        if reason is not None:
+            self.eliminate(pid, reason)
             return
+        assert isinstance(move, tuple)
 
         target_pos = self._resolve_target_position(player.pos, move)
         if target_pos is None:
-            self._eliminate(player, f"invalid move: {move} is not one orthogonal step")
+            self.eliminate(pid, f"invalid move: {move} is not one orthogonal step")
             return
 
         nr, nc = target_pos
 
         if not self._in_bounds(nr, nc):
-            self._eliminate(player, f"out of bounds: {target_pos}")
+            self.eliminate(pid, f"out of bounds: {target_pos}")
             return
 
         target = self.board[nr][nc]
 
         if target not in (EMPTY, player.player_id):
-            self._eliminate(player, f"collision: {target_pos} belongs to player {target}")
+            self.eliminate(pid, f"collision: {target_pos} belongs to player {target}")
             return
 
         player.pos = (nr, nc)
         self.board[nr][nc] = player.player_id
         self._capture_enclosed_empty(player.player_id)
 
-    def _eliminate(self, player: PlayerState, reason: str) -> None:
+    def eliminate(self, pid: str, reason: str) -> None:
+        player = self.players[pid]
         player.alive = False
         player.death_reason = reason
 
