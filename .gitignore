@@ -36,3 +36,6 @@ htmlcov/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Built site
+_site/

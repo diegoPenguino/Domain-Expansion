@@ -132,6 +132,25 @@ Al finalizar las permutaciones, el script anunciará al **Ganador** y al **Segun
 
 ---
 
+## 🌐 Versión web
+
+El juego también corre en el navegador, en [penguino.space/Domain-Expansion](https://penguino.space/Domain-Expansion/): eliges cuatro bots de `codes/` y ves la partida.
+
+- `web/` tiene la página. Python corre con [Pyodide](https://pyodide.org) dentro de un worker, en un iframe con `sandbox`, así el código de los bots no puede leer nada del sitio.
+- `scripts/build_site.py` arma `_site/` con la página, `simulator.py`, los bots y la lista `bots.json`.
+- El workflow `.github/workflows/pages.yml` corre los tests y, en `master`, publica `_site/` en GitHub Pages.
+
+Para probarla en local:
+
+```bash
+python scripts/build_site.py
+python -m http.server -d _site 8000
+```
+
+Y abre http://localhost:8000.
+
+---
+
 ## 🧪 Tests
 
 Los tests del motor (reglas de movimiento, encierro, fin de partida y carga de bots) usan `pytest`:
