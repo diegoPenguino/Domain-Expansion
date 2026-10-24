@@ -336,3 +336,15 @@ def test_invalid_move_reason(move, expected):
 
 def test_error_reason():
     assert error_reason(KeyError("x")) == "error: KeyError: 'x'"
+
+
+# The challenge bot (compiled, see scripts/compile_challenge.py)
+
+
+@pytest.mark.parametrize("path", sorted((BOTS_DIR.parent / "challenge").glob("*.py")))
+def test_challenge_bots_load_and_play(path):
+    next_step = load_bot_from_source(path.read_text(encoding="utf-8"), path.stem)
+    sim = TerritoryWarSimulator(50, 50, [next_step, *pacers(3)])
+    for _ in range(20):
+        sim.step()
+    assert sim.players["1"].alive, sim.players["1"].death_reason
