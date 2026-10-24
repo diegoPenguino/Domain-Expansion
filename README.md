@@ -134,9 +134,10 @@ Al finalizar las permutaciones, el script anunciará al **Ganador** y al **Segun
 
 ## 🌐 Versión web
 
-El juego también corre en el navegador, en [penguino.space/Domain-Expansion](https://penguino.space/Domain-Expansion/): eliges cuatro bots de `codes/` y ves la partida.
+El juego también corre en el navegador, en [penguino.space/Domain-Expansion](https://penguino.space/Domain-Expansion/): eliges cuatro bots y ves la partida. Además de los de `codes/`, cualquiera puede entrar con Google y subir hasta 5 bots propios; su código es público y todos pueden elegirlos.
 
 - `web/` tiene la página. Python corre con [Pyodide](https://pyodide.org) dentro de un iframe con `sandbox`, así el código de los bots no puede leer nada del sitio. El motor corre en un worker y cada bot en otro: un bot que tarda más de 2 segundos en una jugada (o 5 en cargar) queda eliminado y los demás siguen.
+- `web/account.js` guarda los bots subidos en Firestore (`users/{uid}/bots/{slot}`), en el mismo proyecto de Firebase que los comentarios de penguino.space. Las reglas que los protegen están en el repo de la web, en `firebase/firestore.rules`. Antes de guardar, el bot juega 10 turnos de prueba: si falla, se pasa del tiempo o devuelve algo inválido, no se guarda.
 - `scripts/build_site.py` arma `_site/` con la página, `simulator.py`, los bots y la lista `bots.json`.
 - El workflow `.github/workflows/pages.yml` corre los tests y, en `master`, publica `_site/` en GitHub Pages.
 
@@ -147,7 +148,7 @@ python scripts/build_site.py
 python -m http.server -d _site 8000
 ```
 
-Y abre http://localhost:8000.
+Y abre http://localhost:8000. Para probar la subida de bots sin tocar los datos reales, levanta los emuladores de Firebase desde `firebase/` en el repo de la web (`npx firebase emulators:start --only auth,firestore --project demo-penguino`) y abre http://localhost:8000/?emulator.
 
 ---
 

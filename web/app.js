@@ -1,5 +1,9 @@
 // Play page: picks the bots, sends their code to the sandboxed runner, and plays back the
 // frames it returns. This page never runs bot code itself.
+//
+// Bots come from two places: the repo's codes/ folder ("repo:<name>") and the ones people
+// upload ("user:<uid>/<slot>"), which account.js loads from Firestore and hands over
+// through the `game` object at the end of this file.
 
 const ROWS = 50;
 const COLS = 50;
@@ -18,6 +22,13 @@ const COLORS = {
   4: [61, 149, 214],
 };
 const MARKER_FACTOR = 0.72;
+
+const REPO_GROUP = "OBI-CAMP 2026";
+const COMMUNITY_GROUP = "Comunidad";
+
+// Before an uploaded bot is saved, it plays a few turns against these.
+const TEST_TURNS = 10;
+const TEST_OPPONENTS = ["diego", "mia", "ignacio"];
 
 const REASONS = {
   error: "Su código lanzó un error",
@@ -42,12 +53,16 @@ const els = {
   toggle: $("toggle"),
   scrub: $("scrub"),
   turn: $("turn"),
+  codeDialog: $("code-dialog"),
+  codeTitle: $("code-title"),
+  codeBody: $("code-body"),
 };
 
 const state = {
   engine: null,
   workerSources: null,
   bots: [],
+  userBots: [],
   codeCache: new Map(),
   runnerReady: false,
   pythonReady: false,
@@ -60,6 +75,8 @@ const state = {
   playing: false,
   lastTick: 0,
   carry: 0,
+  validation: null,
+  validationCount: 0,
 };
 
 // ---------- Loading ----------
@@ -138,17 +155,70 @@ function renderSeats() {
 
     const select = document.createElement("select");
     select.id = id;
-    for (const name of state.bots) {
-      const option = document.createElement("option");
-      option.value = name;
-      option.textContent = name;
-      select.append(option);
-    }
-    select.value = state.bots.includes(fallback) ? fallback : state.bots[i % state.bots.length];
 
-    row.append(swatch, label, select);
+    const view = document.createElement("button");
+    view.type = "button";
+    view.className = "btn btn--ghost seat-code";
+    view.textContent = "Código";
+    view.setAttribute("aria-label", `Ver el código del jugador ${i + 1}`);
+    view.addEventListener("click", () => showCode(select.value));
+
+    row.append(swatch, label, select, view);
     els.seats.append(row);
+    const name = state.bots.includes(fallback) ? fallback : state.bots[i % state.bots.length];
+    fillSeat(select, `repo:${name}`);
   });
+}
+
+// Rebuilds a seat's options and keeps `wanted` selected if it still exists.
+function fillSeat(select, wanted) {
+  const groups = [[REPO_GROUP, state.bots.map((name) => [`repo:${name}`, name])]];
+  if (state.userBots.length) {
+    groups.push([COMMUNITY_GROUP, state.userBots.map((bot) => [`user:${bot.id}`, botLabel(bot)])]);
+  }
+  select.replaceChildren(
+    ...groups.map(([title, items]) => {
+      const group = document.createElement("optgroup");
+      group.label = title;
+      for (const [value, text] of items) {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = text;
+        group.append(option);
+      }
+      return group;
+    }),
+  );
+  select.value = wanted;
+  if (select.value !== wanted) select.selectedIndex = 0;
+}
+
+function botLabel(bot) {
+  return `${bot.name} — ${bot.ownerName}`;
+}
+
+// What a seat's value refers to: {name, label, code: Promise<string>}, or null if an
+// uploaded bot was deleted.
+function seatBot(value) {
+  if (value.startsWith("user:")) {
+    const bot = state.userBots.find((b) => `user:${b.id}` === value);
+    return bot ? { name: bot.name, label: botLabel(bot), code: Promise.resolve(bot.code) } : null;
+  }
+  const name = value.slice("repo:".length);
+  return { name, label: name, code: botCode(name) };
+}
+
+async function showCode(value) {
+  const bot = seatBot(value);
+  if (!bot) return;
+  els.codeTitle.textContent = bot.label;
+  els.codeBody.textContent = "Cargando…";
+  els.codeDialog.showModal();
+  try {
+    els.codeBody.textContent = await bot.code;
+  } catch (err) {
+    els.codeBody.textContent = "No se pudo cargar el código.";
+  }
 }
 
 // ---------- Runner messages ----------
@@ -174,6 +244,10 @@ function onRunnerMessage(event) {
     if (!state.frames.length) els.boardMsg.textContent = "Elige los bots y pulsa Jugar";
     return;
   }
+  if (state.validation && msg.matchId === state.validation.id) {
+    onTestMessage(msg);
+    return;
+  }
   if (msg.matchId !== undefined && msg.matchId !== state.matchId) return;
 
   if (msg.type === "frame") {
@@ -195,18 +269,23 @@ async function startMatch(event) {
   event.preventDefault();
   if (!state.pythonReady) return;
 
-  const names = [...els.seats.querySelectorAll("select")].map((s) => s.value);
+  const bots = [...els.seats.querySelectorAll("select")].map((s) => seatBot(s.value));
+  if (bots.includes(null)) {
+    setStatus("Uno de los bots ya no existe. Elige otro.", true);
+    return;
+  }
   let codes;
   try {
-    codes = await Promise.all(names.map(botCode));
+    codes = await Promise.all(bots.map((bot) => bot.code));
   } catch (err) {
     setStatus("No se pudo descargar el código de un bot.", true);
     return;
   }
 
-  // If a match is still running, the runner stops it before starting this one.
+  // If a match or a test is still running, the runner stops it before starting this one.
+  finishTest({ ok: false, message: "La prueba se interrumpió porque empezó una partida." });
   state.matchId += 1;
-  state.names = names;
+  state.names = bots.map((bot) => bot.label);
   state.frames = [];
   state.deathTurns = [null, null, null, null];
   state.simulating = true;
@@ -223,7 +302,7 @@ async function startMatch(event) {
       type: "play",
       matchId: state.matchId,
       engine: state.engine,
-      bots: names.map((name, i) => ({ name, code: codes[i] })),
+      bots: bots.map((bot, i) => ({ name: bot.name, code: codes[i] })),
       rows: ROWS,
       cols: COLS,
       maxTurns: MAX_TURNS,
@@ -231,6 +310,77 @@ async function startMatch(event) {
     },
     "*",
   );
+}
+
+// ---------- Testing an uploaded bot ----------
+
+// Plays TEST_TURNS turns with the bot in seat 1. Resolves to {ok, message?, warning?}:
+// errors, timeouts and invalid answers fail; losing (a collision, leaving the board) is
+// a strategy problem, so the bot can still be saved.
+async function validateBot(name, code) {
+  if (!state.pythonReady) {
+    return { ok: false, message: "Python todavía está cargando. Prueba en unos segundos." };
+  }
+  finishTest({ ok: false, message: "La prueba se interrumpió." });
+
+  const opponents = TEST_OPPONENTS.filter((n) => state.bots.includes(n));
+  while (opponents.length < 3) opponents.push(state.bots[opponents.length]);
+  let codes;
+  try {
+    codes = await Promise.all(opponents.map(botCode));
+  } catch (err) {
+    return { ok: false, message: "No se pudieron descargar los bots de prueba." };
+  }
+
+  // The runner plays one match at a time, so a match being watched stops here.
+  if (state.simulating) {
+    state.simulating = false;
+    els.play.textContent = "Jugar";
+    setStatus("La partida se detuvo para probar tu bot.");
+  }
+
+  state.validationCount += 1;
+  const id = `test-${state.validationCount}`;
+  return new Promise((resolve) => {
+    state.validation = { id, resolve, last: null };
+    els.runner.contentWindow.postMessage(
+      {
+        type: "play",
+        matchId: id,
+        engine: state.engine,
+        bots: [{ name, code }, ...opponents.map((n, i) => ({ name: n, code: codes[i] }))],
+        rows: ROWS,
+        cols: COLS,
+        maxTurns: TEST_TURNS,
+        limits: LIMITS_MS,
+      },
+      "*",
+    );
+  });
+}
+
+function onTestMessage(msg) {
+  if (msg.type === "frame") {
+    state.validation.last = msg;
+  } else if (msg.type === "done") {
+    const me = state.validation.last && state.validation.last.players[0];
+    if (!me || me.alive) {
+      finishTest({ ok: true });
+    } else if (/^(error|timeout|invalid move):/.test(me.reason || "")) {
+      finishTest({ ok: false, message: describeReason(me.reason) });
+    } else {
+      finishTest({ ok: true, warning: describeReason(me.reason) });
+    }
+  } else if (msg.type === "error") {
+    finishTest({ ok: false, message: msg.message });
+  }
+}
+
+function finishTest(result) {
+  const test = state.validation;
+  if (!test) return;
+  state.validation = null;
+  test.resolve(result);
 }
 
 function addFrame(frame) {
@@ -380,13 +530,18 @@ function renderScores(frame) {
 }
 
 function deathText(reason, turn) {
+  const when = turn === 0 ? " antes de empezar" : turn ? ` en el turno ${turn}` : "";
+  return `Eliminado${when}. ${describeReason(reason)}`;
+}
+
+// "collision: (3, 4) belongs to player 2" -> "Pisó territorio ajeno: (3, 4) belongs to player 2"
+function describeReason(reason) {
   const text = reason || "";
   const key = Object.keys(REASONS).find((k) => text.startsWith(k + ":"));
   const label = key ? REASONS[key] : "Eliminado";
   // A timeout's detail is in English and adds nothing to the label.
   const detail = key === "timeout" ? "" : key ? text.slice(key.length + 1).trim() : text;
-  const when = turn === 0 ? " antes de empezar" : turn ? ` en el turno ${turn}` : "";
-  return `Eliminado${when}. ${label}${detail ? ": " + detail : ""}`;
+  return `${label}${detail ? ": " + detail : ""}`;
 }
 
 function setStatus(text, isError = false) {
@@ -397,6 +552,9 @@ function setStatus(text, isError = false) {
 // ---------- Wiring ----------
 
 els.setup.addEventListener("submit", startMatch);
+for (const button of document.querySelectorAll("dialog [data-close]")) {
+  button.addEventListener("click", () => button.closest("dialog").close());
+}
 els.toggle.addEventListener("click", onToggle);
 els.scrub.addEventListener("input", onScrub);
 addEventListener("resize", () => {
@@ -405,3 +563,15 @@ addEventListener("resize", () => {
 });
 
 init();
+
+// ---------- For account.js ----------
+
+// account.js is a module loaded after this script; it reaches this object by name.
+const game = {
+  // bots: [{id: "<uid>/<slot>", name, ownerName, code, updatedAt (ms)}]
+  setUserBots(bots) {
+    state.userBots = [...bots].sort((a, b) => b.updatedAt - a.updatedAt);
+    for (const select of els.seats.querySelectorAll("select")) fillSeat(select, select.value);
+  },
+  validateBot,
+};

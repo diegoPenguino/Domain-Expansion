@@ -105,7 +105,8 @@ select:hover { border-color: var(--muted); }
 /* Setup panel */
 .seats { border: 0; margin: 0; padding: 0; }
 .seats legend { padding: 0; margin-bottom: 10px; font-size: clamp(22px, 2.4vw, 28px); font-weight: 500; letter-spacing: -.02em; }
-.seat { display: grid; grid-template-columns: 14px minmax(0, 1fr); align-items: center; gap: 12px; margin-bottom: 10px; }
+.seat { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; gap: 12px; margin-bottom: 10px; }
+.seat-code { padding: 0 14px; }
 .swatch { width: 14px; height: 44px; background: var(--color); }
 .controls { display: flex; align-items: end; gap: 12px; margin-top: 18px; }
 .speed { flex: 1; display: grid; gap: 4px; color: var(--muted); font-size: .9em; }
@@ -125,6 +126,44 @@ select:hover { border-color: var(--muted); }
 .score-state { grid-column: 2 / 4; color: var(--muted); font-size: .9em; overflow-wrap: anywhere; }
 .score.is-dead .score-name { color: var(--muted); }
 .score.is-leader .score-cells { color: var(--accent); font-weight: 600; }
+
+/* Your bots */
+.account { padding-top: clamp(56px, 7vw, 100px); }
+.account > * { max-width: 40em; }
+.account-intro { margin: 0 0 20px; color: var(--muted); }
+.account-user { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; margin: 0 0 12px; }
+.link-btn {
+  min-height: 44px; padding: 0; background: none; border: 0;
+  color: var(--accent); text-decoration: underline; text-underline-offset: .18em; text-decoration-thickness: .06em;
+  cursor: pointer;
+}
+.link-btn:hover { color: var(--text); }
+.my-bots { list-style: none; margin: 0 0 20px; padding: 0; border-top: 1px solid var(--line); }
+.my-bot { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.my-bot-name { flex: 1; min-width: 0; font-weight: 500; overflow-wrap: anywhere; }
+
+/* Dialogs */
+.dialog {
+  width: min(860px, calc(100vw - 32px)); max-height: calc(100dvh - 32px);
+  padding: clamp(18px, 3vw, 32px); border: 1px solid var(--line-2); border-radius: 0;
+  background: var(--bg); color: var(--text);
+}
+.dialog::backdrop { background: rgb(25 23 22 / .6); }
+.dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.dialog-head h2 { margin: 0; overflow-wrap: anywhere; }
+.dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 12px; margin-top: 16px; }
+.code {
+  margin: 0; padding: 16px; overflow: auto; max-height: 70dvh;
+  background: var(--field); color: var(--field-ink);
+  font: .82rem/1.5 var(--code); tab-size: 4;
+}
+.field-label { display: block; margin: 14px 0 6px; color: var(--muted); font-size: .9em; }
+.input {
+  display: block; width: 100%; min-height: 44px; padding: 8px 12px;
+  background: var(--bg); border: 1px solid var(--line-2); border-radius: 0;
+}
+.input:hover { border-color: var(--muted); }
+.code-input { font: .82rem/1.5 var(--code); tab-size: 4; resize: vertical; min-height: 16em; white-space: pre; overflow-wrap: normal; }
 
 /* Rules */
 .rules { padding-top: clamp(56px, 7vw, 100px); padding-bottom: clamp(56px, 7vw, 100px); }

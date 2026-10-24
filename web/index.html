@@ -63,12 +63,58 @@
     </section>
   </main>
 
+  <section class="wrap account" id="account" aria-labelledby="account-title" hidden>
+    <h2 id="account-title">Tus bots</h2>
+    <p class="account-intro">Sube hasta 5 bots en Python. Cualquiera puede ver su código y elegirlos para jugar. Antes de guardarlo, tu bot juega 10 turnos de prueba.</p>
+
+    <div id="signed-out">
+      <button class="btn" id="sign-in" type="button">Entrar con Google</button>
+    </div>
+
+    <div id="signed-in" hidden>
+      <p class="account-user">
+        <span id="account-name"></span>
+        <button class="link-btn" id="sign-out" type="button">Salir</button>
+      </p>
+      <ul class="my-bots" id="my-bots"></ul>
+      <button class="btn" id="new-bot" type="button">Nuevo bot</button>
+    </div>
+
+    <p class="status" id="account-status" role="status"></p>
+  </section>
+
   <section class="wrap rules">
     <h2>Cómo se juega</h2>
     <p>En cada turno, cada bot avanza una casilla en horizontal o vertical. Solo puede pisar casillas vacías o propias: si sale del tablero, pisa territorio ajeno, hace un movimiento inválido, su código falla o tarda más de 2 segundos en decidir, queda eliminado. Gana quien tenga más casillas al final, después de 1000 turnos o cuando el tablero se llena.</p>
-    <p>Un bot es una función <code>next_step</code> que recibe el tablero y su posición, y devuelve la casilla a la que quiere moverse. Los bots de esta página son los del <a href="https://github.com/diegoPenguino/Domain-Expansion">repositorio</a>, escritos por participantes del OBI-CAMP 2026.</p>
+    <p>Un bot es una función <code>next_step</code> que recibe el tablero y su posición, y devuelve la casilla a la que quiere moverse. Los bots del grupo OBI-CAMP 2026 son los del <a href="https://github.com/diegoPenguino/Domain-Expansion">repositorio</a>, escritos por participantes del campamento; los de Comunidad los subieron visitantes de esta página.</p>
   </section>
 
+  <dialog class="dialog" id="code-dialog" aria-labelledby="code-title">
+    <div class="dialog-head">
+      <h2 id="code-title">Código</h2>
+      <button class="btn btn--ghost" type="button" data-close>Cerrar</button>
+    </div>
+    <pre class="code"><code id="code-body"></code></pre>
+  </dialog>
+
+  <dialog class="dialog" id="editor" aria-labelledby="editor-title">
+    <form id="editor-form">
+      <div class="dialog-head">
+        <h2 id="editor-title">Nuevo bot</h2>
+      </div>
+      <label class="field-label" for="editor-name">Nombre</label>
+      <input class="input" id="editor-name" maxlength="40" required autocomplete="off">
+      <label class="field-label" for="editor-code">Código</label>
+      <textarea class="input code-input" id="editor-code" rows="18" spellcheck="false" autocapitalize="off" autocomplete="off" required></textarea>
+      <p class="status" id="editor-status" role="status"></p>
+      <div class="dialog-actions">
+        <button class="btn btn--ghost" type="button" id="editor-cancel">Cancelar</button>
+        <button class="btn" type="submit" id="editor-save">Probar y guardar</button>
+      </div>
+    </form>
+  </dialog>
+
   <script src="app.js"></script>
+  <script type="module" src="account.js"></script>
 </body>
 </html>
