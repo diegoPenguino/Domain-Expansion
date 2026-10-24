@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import time
+import types
 from collections import deque
 from dataclasses import dataclass
-from importlib import import_module
+from pathlib import Path
 from typing import Callable, Dict, List, Sequence, Tuple, TypedDict, cast
 
 
@@ -13,6 +14,8 @@ Move = Tuple[int, int]
 NextStepFn = Callable[[Board, Position, List[Position], str], Move]
 
 EMPTY = "."
+PLAYER_IDS = ("1", "2", "3", "4")
+BOTS_DIR = Path(__file__).resolve().parent / "codes"
 
 # Simulation constants (edit these values directly to configure matches)
 DEFAULT_ROWS = 50
@@ -50,6 +53,7 @@ class PlayerState:
     next_step: NextStepFn
     pos: Position
     alive: bool = True
+    death_reason: str | None = None
 
 
 class SimulationResult(TypedDict):
@@ -58,6 +62,11 @@ class SimulationResult(TypedDict):
     alive: Dict[str, bool]
     positions: Dict[str, Position]
     territory: Dict[str, int]
+    death_reasons: Dict[str, str | None]
+
+
+class BotLoadError(Exception):
+    """A bot's code could not be run or does not define next_step."""
 
 
 class TerritoryWarSimulator:
@@ -135,14 +144,12 @@ class TerritoryWarSimulator:
             time.sleep(frame_delay)
 
         for _ in range(max_turns):
-            if self._finished():
+            if self.is_finished():
                 break
 
             self.turn += 1
-            for pid in ("1", "2", "3", "4"):
-                player = self.players[pid]
-                if player.alive:
-                    self._play_turn(player)
+            for pid in PLAYER_IDS:
+                self.play_move(pid)
 
                 if render_enabled and render_mode == "move":
                     render_enabled = self._render_frame(render_backend, pygame_renderer)
@@ -162,14 +169,26 @@ class TerritoryWarSimulator:
         if pygame_renderer is not None:
             pygame_renderer.close()
 
-        result: SimulationResult = {
+        return self.result()
+
+    def step(self) -> bool:
+        """Play one full turn. Returns False, without playing, once the game is over."""
+        if self.is_finished():
+            return False
+        self.turn += 1
+        for pid in PLAYER_IDS:
+            self.play_move(pid)
+        return True
+
+    def result(self) -> SimulationResult:
+        return {
             "turns": self.turn,
             "board": self.board,
             "alive": {pid: p.alive for pid, p in self.players.items()},
             "positions": {pid: p.pos for pid, p in self.players.items()},
             "territory": self.territory_count_by_name(),
+            "death_reasons": {pid: p.death_reason for pid, p in self.players.items()},
         }
-        return result
 
     def _render_frame(
         self,
@@ -195,55 +214,47 @@ class TerritoryWarSimulator:
     def territory_count_by_name(self) -> Dict[str, int]:
         counts_by_id = self.territory_count()
         counts_by_name: Dict[str, int] = {}
-        for pid in ("1", "2", "3", "4"):
+        for pid in PLAYER_IDS:
             player = self.players[pid]
             counts_by_name[player.player_name] = counts_by_id[pid]
         return counts_by_name
 
-    def _finished(self) -> bool:
+    def is_finished(self) -> bool:
         any_alive = any(player.alive for player in self.players.values())
         any_empty = any(EMPTY in row for row in self.board)
         return (not any_alive) or (not any_empty)
 
-    def _play_turn(self, player: PlayerState) -> None:
-        move = self._safe_next_step(player)
-        if move is None:
-            player.alive = False
-            return
+    def play_move(self, pid: str) -> None:
+        """Ask one player's bot for its move and apply it. Dead players are skipped."""
+        if self.players[pid].alive:
+            self.apply_move(pid, self.request_move(pid))
 
-        target_pos = self._resolve_target_position(player.pos, move)
-        if target_pos is None:
-            player.alive = False
-            return
-
-        nr, nc = target_pos
-
-        if not self._in_bounds(nr, nc):
-            player.alive = False
-            return
-
-        target = self.board[nr][nc]
-
-        if target not in (EMPTY, player.player_id):
-            player.alive = False
-            return
-
-        player.pos = (nr, nc)
-        self.board[nr][nc] = player.player_id
-        self._capture_enclosed_empty(player.player_id)
-
-    def _safe_next_step(self, player: PlayerState) -> Move | None:
+    def request_move(self, pid: str) -> object:
+        """Call the bot. Returns whatever it returned, or the exception it raised."""
+        player = self.players[pid]
         board_snapshot = [row[:] for row in self.board]
-        all_player_positions = [self.players[pid].pos for pid in ("1", "2", "3", "4")]
+        all_player_positions = [self.players[p].pos for p in PLAYER_IDS]
         try:
-            move = player.next_step(
+            return player.next_step(
                 board_snapshot,
                 player.pos,
                 all_player_positions,
                 player.player_id,
             )
-        except Exception:
-            return None
+        except Exception as exc:
+            return exc
+
+    def apply_move(self, pid: str, move: object) -> None:
+        """Validate a move and update the board, or eliminate the player.
+
+        Kept apart from request_move so a recorded move can be applied again
+        without calling the bot.
+        """
+        player = self.players[pid]
+
+        if isinstance(move, Exception):
+            self._eliminate(player, f"error: {type(move).__name__}: {move}")
+            return
 
         if (
             not isinstance(move, tuple)
@@ -251,9 +262,33 @@ class TerritoryWarSimulator:
             or not isinstance(move[0], int)
             or not isinstance(move[1], int)
         ):
-            return None
+            self._eliminate(player, f"invalid move: returned {move!r}")
+            return
 
-        return move
+        target_pos = self._resolve_target_position(player.pos, move)
+        if target_pos is None:
+            self._eliminate(player, f"invalid move: {move} is not one orthogonal step")
+            return
+
+        nr, nc = target_pos
+
+        if not self._in_bounds(nr, nc):
+            self._eliminate(player, f"out of bounds: {target_pos}")
+            return
+
+        target = self.board[nr][nc]
+
+        if target not in (EMPTY, player.player_id):
+            self._eliminate(player, f"collision: {target_pos} belongs to player {target}")
+            return
+
+        player.pos = (nr, nc)
+        self.board[nr][nc] = player.player_id
+        self._capture_enclosed_empty(player.player_id)
+
+    def _eliminate(self, player: PlayerState, reason: str) -> None:
+        player.alive = False
+        player.death_reason = reason
 
     def _capture_enclosed_empty(self, player_id: str) -> None:
         reachable = [[False for _ in range(self.cols)] for _ in range(self.rows)]
@@ -318,32 +353,40 @@ class TerritoryWarSimulator:
         return None
 
 
+def load_bot_from_source(source: str, name: str = "bot") -> NextStepFn:
+    """Run a bot's code in a new module and return its next_step.
+
+    Every call gets fresh globals, so two copies of the same bot, or two
+    matches in a row, never share state.
+    """
+    module = types.ModuleType(name)
+    try:
+        exec(compile(source, f"<bot {name}>", "exec"), module.__dict__)
+    except Exception as exc:
+        raise BotLoadError(f"{name}: {type(exc).__name__}: {exc}") from exc
+
+    next_step = module.__dict__.get("next_step")
+    if not callable(next_step):
+        raise BotLoadError(f"{name}: must define a next_step function")
+    return cast(NextStepFn, next_step)
+
+
+def load_bot_file(name: str) -> NextStepFn:
+    path = BOTS_DIR / f"{name}.py"
+    if not path.is_file():
+        raise BotLoadError(f"No bot named '{name}' in {BOTS_DIR.name}/")
+    source = path.read_text(encoding="utf-8")
+    return load_bot_from_source(source, name)
+
+
 def import_player_functions(
     module_names: Sequence[str],
 ) -> Tuple[NextStepFn, NextStepFn, NextStepFn, NextStepFn]:
     if len(module_names) != 4:
         raise ValueError("Exactly 4 module names are required")
 
-    def load(module_name: str) -> NextStepFn:
-        module = import_module(f"codes.{module_name}")
-        next_step = getattr(module, "next_step", None)
-        if next_step is None or not callable(next_step):
-            raise AttributeError(
-                f"Module '{module_name}' must define callable next_step"
-            )
-        return cast(NextStepFn, next_step)
-
-    next_step_player1 = load(module_names[0])
-    next_step_player2 = load(module_names[1])
-    next_step_player3 = load(module_names[2])
-    next_step_player4 = load(module_names[3])
-
-    return (
-        next_step_player1,
-        next_step_player2,
-        next_step_player3,
-        next_step_player4,
-    )
+    p1, p2, p3, p4 = (load_bot_file(name) for name in module_names)
+    return (p1, p2, p3, p4)
 
 
 def print_board(board: Board) -> None:
@@ -474,7 +517,7 @@ class PygameRenderer:
 
         status_y = 36
         status_x = 12
-        for i, pid in enumerate(("1", "2", "3", "4")):
+        for i, pid in enumerate(PLAYER_IDS):
             player = players[pid]
             name_text = self.small_font.render(
                 player.player_name,
@@ -497,7 +540,7 @@ class PygameRenderer:
                 self.screen.blit(sep_text, (status_x, status_y))
                 status_x += sep_text.get_width()
 
-        scores = {"1": 0, "2": 0, "3": 0, "4": 0}
+        scores = {pid: 0 for pid in PLAYER_IDS}
         for row in board:
             for cell in row:
                 if cell in scores:
@@ -508,7 +551,7 @@ class PygameRenderer:
         self.screen.blit(score_label, (score_x, score_y))
         score_x += score_label.get_width()
 
-        for i, pid in enumerate(("1", "2", "3", "4")):
+        for i, pid in enumerate(PLAYER_IDS):
             player = players[pid]
             name_text = self.small_font.render(
                 player.player_name,
@@ -597,7 +640,7 @@ def run_program(players):
 
 
 if __name__ == "__main__":
-    result = run_program(players=["player1", "player2", "player3", "player4"])
+    result = run_program(players=["player1", "player2", "player3", "diego"])
     print(f"Turns played: {result['turns']}")
     print(f"Alive: {result['alive']}")
     print(f"Territory: {result['territory']}")

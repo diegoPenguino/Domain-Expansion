@@ -129,3 +129,14 @@ python competition.py
 ```
 
 Al finalizar las permutaciones, el script anunciará al **Ganador** y al **Segundo Lugar** basándose en la dominación de territorio acumulada. ¡Que gane el mejor algoritmo!
+
+---
+
+## 🧪 Tests
+
+Los tests del motor (reglas de movimiento, encierro, fin de partida y carga de bots) usan `pytest`:
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest
+```
