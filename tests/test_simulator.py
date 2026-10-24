@@ -5,6 +5,8 @@ from simulator import (
     EMPTY,
     BotLoadError,
     TerritoryWarSimulator,
+    error_reason,
+    invalid_move_reason,
     load_bot_file,
     load_bot_from_source,
 )
@@ -276,3 +278,61 @@ def test_every_bot_in_codes_loads_and_plays(name):
 def test_missing_bot_file_raises_bot_load_error():
     with pytest.raises(BotLoadError, match="No bot named 'nobody'"):
         load_bot_file("nobody")
+
+
+# Driving the game from outside (the web version)
+
+
+def test_start_turn_and_apply_move_match_step():
+    stepped = make_sim()
+    stepped.step()
+
+    driven = make_sim()
+    assert driven.start_turn()
+    for pid in "1234":
+        board, pos, positions, me = driven.bot_input(pid)
+        driven.apply_move(pid, driven.players[pid].next_step(board, pos, positions, me))
+
+    assert driven.turn == stepped.turn == 1
+    assert driven.board == stepped.board
+
+
+def test_start_turn_returns_false_when_finished():
+    sim = make_sim(rows=2, cols=2)
+    assert not sim.start_turn()
+    assert sim.turn == 0
+
+
+def test_bot_input_is_a_copy_with_all_positions():
+    sim = make_sim(rows=4, cols=5)
+    board, pos, positions, me = sim.bot_input("2")
+    board[1][1] = "2"
+    assert sim.board[1][1] == EMPTY
+    assert pos == (0, 4)
+    assert positions == [(0, 0), (0, 4), (3, 0), (3, 4)]
+    assert me == "2"
+
+
+def test_eliminate_records_the_reason():
+    sim = make_sim()
+    sim.eliminate("3", "timeout: no move after 2 s")
+    assert not sim.players["3"].alive
+    assert sim.result()["death_reasons"]["3"] == "timeout: no move after 2 s"
+
+
+@pytest.mark.parametrize(
+    "move, expected",
+    [
+        ((1, 2), None),
+        ((1, 2, 3), "invalid move: returned (1, 2, 3)"),
+        ([1, 2], "invalid move: returned [1, 2]"),
+        (("1", 2), "invalid move: returned ('1', 2)"),
+        (None, "invalid move: returned None"),
+    ],
+)
+def test_invalid_move_reason(move, expected):
+    assert invalid_move_reason(move) == expected
+
+
+def test_error_reason():
+    assert error_reason(KeyError("x")) == "error: KeyError: 'x'"

@@ -4,6 +4,9 @@
 const ROWS = 50;
 const COLS = 50;
 const MAX_TURNS = 1000;
+// Time a bot gets to answer one move, and to load its code. A bot over the limit is
+// eliminated; the runner stops its worker.
+const LIMITS_MS = { move: 2000, load: 5000 };
 const DEFAULT_SEATS = ["ignacio", "mia", "diego", "ming"];
 
 // Same colors as PLAYER_COLORS in simulator.py
@@ -21,6 +24,7 @@ const REASONS = {
   "invalid move": "Movimiento inválido",
   "out of bounds": "Salió del tablero",
   collision: "Pisó territorio ajeno",
+  timeout: "Se pasó del tiempo",
 };
 
 const $ = (id) => document.getElementById(id);
@@ -42,7 +46,7 @@ const els = {
 
 const state = {
   engine: null,
-  workerSource: null,
+  workerSources: null,
   bots: [],
   codeCache: new Map(),
   runnerReady: false,
@@ -89,14 +93,15 @@ async function init() {
   addEventListener("message", onRunnerMessage);
   createRunner();
   try {
-    const [manifest, engine, workerSource] = await Promise.all([
+    const [manifest, engine, engineWorker, botWorker] = await Promise.all([
       fetchText("bots.json").then(JSON.parse),
       fetchText("simulator.py"),
-      fetchText("worker.js"),
+      fetchText("engine-worker.js"),
+      fetchText("bot-worker.js"),
     ]);
     state.bots = manifest.bots;
     state.engine = engine;
-    state.workerSource = workerSource;
+    state.workerSources = { engineWorker, botWorker };
   } catch (err) {
     setStatus("No se pudieron cargar los archivos del juego. Recarga la página.", true);
     console.error(err);
@@ -109,8 +114,8 @@ async function init() {
 }
 
 function bootRunner() {
-  if (state.runnerReady && state.workerSource) {
-    els.runner.contentWindow.postMessage({ type: "boot", workerSource: state.workerSource }, "*");
+  if (state.runnerReady && state.workerSources) {
+    els.runner.contentWindow.postMessage({ type: "boot", ...state.workerSources }, "*");
   }
 }
 
@@ -199,14 +204,7 @@ async function startMatch(event) {
     return;
   }
 
-  // A match still running in the worker cannot be interrupted, so start a fresh worker.
-  if (state.simulating) {
-    state.pythonReady = false;
-    els.play.disabled = true;
-    els.runner.contentWindow.postMessage({ type: "reset" }, "*");
-    await waitForPython();
-  }
-
+  // If a match is still running, the runner stops it before starting this one.
   state.matchId += 1;
   state.names = names;
   state.frames = [];
@@ -229,16 +227,10 @@ async function startMatch(event) {
       rows: ROWS,
       cols: COLS,
       maxTurns: MAX_TURNS,
+      limits: LIMITS_MS,
     },
     "*",
   );
-}
-
-function waitForPython() {
-  return new Promise((resolve) => {
-    const check = () => (state.pythonReady ? resolve() : setTimeout(check, 50));
-    check();
-  });
 }
 
 function addFrame(frame) {
@@ -391,8 +383,9 @@ function deathText(reason, turn) {
   const text = reason || "";
   const key = Object.keys(REASONS).find((k) => text.startsWith(k + ":"));
   const label = key ? REASONS[key] : "Eliminado";
-  const detail = key ? text.slice(key.length + 1).trim() : text;
-  const when = turn ? ` en el turno ${turn}` : "";
+  // A timeout's detail is in English and adds nothing to the label.
+  const detail = key === "timeout" ? "" : key ? text.slice(key.length + 1).trim() : text;
+  const when = turn === 0 ? " antes de empezar" : turn ? ` en el turno ${turn}` : "";
   return `Eliminado${when}. ${label}${detail ? ": " + detail : ""}`;
 }
 
