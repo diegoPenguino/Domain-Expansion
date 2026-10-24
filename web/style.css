@@ -76,6 +76,7 @@ h2 { font-weight: 500; font-size: clamp(26px, 3vw, 34px); letter-spacing: -.02em
   color: var(--field-muted);
 }
 
+.chart { display: block; width: 100%; max-width: 640px; height: 120px; margin-top: 14px; background: var(--empty); }
 .playback { display: flex; align-items: center; gap: 14px; max-width: 640px; margin-top: 14px; }
 .scrub { flex: 1; display: flex; align-items: center; min-height: 44px; }
 .scrub input { width: 100%; accent-color: var(--accent); }
