@@ -43,14 +43,21 @@ def main() -> None:
         shutil.copy2(path, challenge_out / path.name)
         challenge.append(path.stem)
 
-    manifest = {"bots": names, "challenge": challenge}
+    # Example bots: public, commented code; examples.json gives their order and labels.
+    examples_out = OUT / "examples"
+    examples_out.mkdir()
+    examples = json.loads((ROOT / "examples" / "examples.json").read_text(encoding="utf-8"))
+    for example in examples:
+        shutil.copy2(ROOT / "examples" / f"{example['file']}.py", examples_out / f"{example['file']}.py")
+
+    manifest = {"bots": names, "challenge": challenge, "examples": examples}
     (OUT / "bots.json").write_text(json.dumps(manifest, indent=2) + "\n")
 
     version = site_hash()
     for name in VERSIONED:
         path = OUT / name
         path.write_text(path.read_text(encoding="utf-8").replace(PLACEHOLDER, version), encoding="utf-8")
-    print(f"Built {OUT.relative_to(ROOT)}/ with {len(names)} bots, {len(challenge)} challenge, version {version}")
+    print(f"Built {OUT.relative_to(ROOT)}/ with {len(names)} bots, {len(examples)} examples, {len(challenge)} challenge, version {version}")
 
 
 def site_hash() -> str:
