@@ -38,7 +38,7 @@ const TRAIL_STEPS = 12;
 const EMPTY_CSS = "rgb(22, 22, 26)";
 
 const CHALLENGE_GROUP = "Reto";
-const REPO_GROUP = "OBI-CAMP 2026";
+const REPO_GROUP = "Participantes originales";
 // Display names for challenge bots; the first one starts in seat 1.
 const CHALLENGE_NAMES = { claude_opus: "Claude Opus 5.5" };
 const COMMUNITY_GROUP = "Comunidad";
@@ -264,7 +264,7 @@ async function showCode(value) {
   if (bot.secret) {
     els.codeSecret.textContent =
       "Es el único bot con el código secreto. Lo escribió Claude Opus 5.5 y gana más del 90 % " +
-      "de sus partidas contra los bots del OBI-CAMP. ¿Puedes escribir uno que le gane sin ver cómo juega?";
+      "de sus partidas contra los participantes originales. ¿Puedes escribir uno que le gane sin ver cómo juega?";
     els.codeDialog.showModal();
     return;
   }
