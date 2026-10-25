@@ -75,6 +75,15 @@ const els = {
   chart: $("chart"),
   chartBox: $("chart-box"),
   playClaude: $("play-claude"),
+  picker: $("picker"),
+  pickerBar: $("picker-bar"),
+  pickerSeat: $("picker-seat"),
+  pickerSearch: $("picker-search"),
+  pickerFilters: $("picker-filters"),
+  pickerMine: document.querySelector('#picker-filters [data-filter="mine"]'),
+  pickerList: $("picker-list"),
+  pickerCount: $("picker-count"),
+  pickerRandom: $("picker-random"),
   codeDialog: $("code-dialog"),
   codeTitle: $("code-title"),
   codeBody: $("code-body"),
@@ -88,6 +97,7 @@ const state = {
   bots: [],
   challenge: [],
   userBots: [],
+  uid: null,
   codeCache: new Map(),
   runnerReady: false,
   pythonReady: false,
@@ -175,11 +185,11 @@ function bootRunner() {
   }
 }
 
-// Each seat row is both the bot picker and that bot's score during a match.
+// Each seat row is both the bot picker and that bot's score during a match. The chosen
+// bot is the row's data-value ("challenge:<name>", "repo:<name>" or "user:<uid>/<slot>").
 function renderSeats() {
   els.seats.replaceChildren();
   DEFAULT_SEATS.forEach((fallback, i) => {
-    const id = `seat-${i + 1}`;
     const row = document.createElement("li");
     row.className = "seat";
     row.style.setProperty("--color", `var(--p${i + 1})`);
@@ -188,13 +198,14 @@ function renderSeats() {
     bar.className = "seat-bar";
     bar.setAttribute("aria-hidden", "true");
 
-    const label = document.createElement("label");
-    label.className = "sr-only";
-    label.htmlFor = id;
-    label.textContent = `Jugador ${i + 1}, ${CORNERS[i]}`;
-
-    const select = document.createElement("select");
-    select.id = id;
+    const pick = document.createElement("button");
+    pick.type = "button";
+    pick.className = "pick";
+    pick.setAttribute("aria-haspopup", "dialog");
+    const pickName = document.createElement("span");
+    pickName.className = "pick-name";
+    pick.append(pickName);
+    pick.addEventListener("click", () => openPicker(i));
 
     const cells = document.createElement("span");
     cells.className = "seat-cells";
@@ -206,19 +217,13 @@ function renderSeats() {
     const view = document.createElement("button");
     view.type = "button";
     view.className = "link-btn seat-code";
-    view.addEventListener("click", () => showCode(select.value));
+    view.addEventListener("click", () => showCode(row.dataset.value));
     meta.append(stateEl, view);
 
-    // Numbers from a match belong to the bot that played it, not to a new pick.
-    select.addEventListener("change", () => {
-      clearSeat(row);
-      updateCodeButton(row);
-    });
-
-    row.append(bar, label, select, cells, meta);
+    row.append(bar, pick, cells, meta);
     els.seats.append(row);
     const name = state.bots.includes(fallback) ? fallback : state.bots[i % state.bots.length];
-    fillSeat(select, i === 0 && state.challenge.length ? `challenge:${state.challenge[0]}` : `repo:${name}`);
+    setSeat(row, i === 0 && state.challenge.length ? `challenge:${state.challenge[0]}` : `repo:${name}`);
   });
 }
 
@@ -226,12 +231,23 @@ function seatRows() {
   return [...els.seats.querySelectorAll(".seat")];
 }
 
-function updateCodeButton(row) {
-  const select = row.querySelector("select");
-  const button = row.querySelector(".seat-code");
-  button.textContent = select.value.startsWith("challenge:") ? "Código secreto" : "Ver código";
-  const option = select.selectedOptions[0];
-  button.setAttribute("aria-label", `${button.textContent}: ${option ? option.textContent : "bot"}`);
+// Puts a bot in a seat and updates the row's labels. A bot that no longer exists (an
+// uploaded bot that was deleted) falls back to the first bot in the catalog.
+function setSeat(row, value) {
+  if (!seatBot(value)) value = catalog()[0].value;
+  const changed = row.dataset.value !== value;
+  row.dataset.value = value;
+  const bot = seatBot(value);
+  const i = seatRows().indexOf(row);
+  // Challenge bots show their display name ("Claude Opus 5.5"); the rest, the bot's name.
+  const shown = bot.secret ? bot.label : bot.name;
+  row.querySelector(".pick-name").textContent = shown;
+  row.querySelector(".pick").setAttribute("aria-label", `Jugador ${i + 1}, ${CORNERS[i]}: ${shown}. Cambiar bot`);
+  const view = row.querySelector(".seat-code");
+  view.textContent = bot.secret ? "Código secreto" : "Ver código";
+  view.setAttribute("aria-label", `${view.textContent}: ${shown}`);
+  // Numbers from a match belong to the bot that played it, not to a new pick.
+  if (changed) clearSeat(row);
 }
 
 function clearSeat(row) {
@@ -241,41 +257,20 @@ function clearSeat(row) {
   row.querySelector(".seat-state").textContent = "";
 }
 
-// Rebuilds a seat's options and keeps `wanted` selected if it still exists.
-function fillSeat(select, wanted) {
-  const groups = [];
-  if (state.challenge.length) {
-    groups.push([CHALLENGE_GROUP, state.challenge.map((name) => [`challenge:${name}`, challengeLabel(name)])]);
-  }
-  groups.push([REPO_GROUP, state.bots.map((name) => [`repo:${name}`, name])]);
-  if (state.userBots.length) {
-    groups.push([COMMUNITY_GROUP, state.userBots.map((bot) => [`user:${bot.id}`, botLabel(bot)])]);
-  }
-  select.replaceChildren(
-    ...groups.map(([title, items]) => {
-      const group = document.createElement("optgroup");
-      group.label = title;
-      for (const [value, text] of items) {
-        const option = document.createElement("option");
-        option.value = value;
-        option.textContent = text;
-        group.append(option);
-      }
-      return group;
-    }),
-  );
-  select.value = wanted;
-  if (select.value !== wanted) select.selectedIndex = 0;
-  const row = select.closest(".seat");
-  if (row) updateCodeButton(row);
-}
-
 function challengeLabel(name) {
   return CHALLENGE_NAMES[name] || name;
 }
 
+// "Nestor Rafael Coronel Hurtado (candi_ositos)" -> "Nestor Coronel": with two given names
+// and two surnames, the first name and the first surname.
+function shortAuthor(name) {
+  const words = String(name || "").replace(/\(.*?\)/g, "").trim().split(/\s+/).filter(Boolean);
+  if (words.length >= 4) return `${words[0]} ${words[2]}`;
+  return words.join(" ") || "Anónimo";
+}
+
 function botLabel(bot) {
-  return `${bot.name} — ${bot.ownerName}`;
+  return `${bot.name} — ${shortAuthor(bot.ownerName)}`;
 }
 
 // What a seat's value refers to: {name, label, code: Promise<string>, secret?}, or null if
@@ -314,6 +309,163 @@ async function showCode(value) {
     els.codeBody.textContent = "No se pudo cargar el código.";
   }
 }
+
+// ---------- Bot picker ----------
+
+const picker = { seat: 0, filter: "all" };
+
+// Every bot that can take a seat: the challenge first, the originals by name, then the
+// community, newest first (state.userBots is already sorted).
+function catalog() {
+  return [
+    ...state.challenge.map((name) => ({
+      value: `challenge:${name}`, group: "challenge", name: challengeLabel(name), by: "Escrito por Claude", secret: true,
+    })),
+    ...state.bots.map((name) => ({ value: `repo:${name}`, group: "repo", name, by: "" })),
+    ...state.userBots.map((bot) => ({
+      value: `user:${bot.id}`, group: "user", name: bot.name,
+      by: shortAuthor(bot.ownerName), fullBy: bot.ownerName, at: bot.updatedAt, mine: bot.uid === state.uid,
+    })),
+  ];
+}
+
+const GROUP_NAMES = { challenge: CHALLENGE_GROUP, repo: REPO_GROUP, user: COMMUNITY_GROUP };
+
+function timeAgo(ms) {
+  const hours = Math.round((Date.now() - ms) / 3600000);
+  if (hours < 1) return "hace un momento";
+  if (hours < 24) return `hace ${hours} h`;
+  const days = Math.round(hours / 24);
+  return days === 1 ? "hace 1 día" : `hace ${days} días`;
+}
+
+function openPicker(seat) {
+  picker.seat = seat;
+  els.picker.style.setProperty("--color", `var(--p${seat + 1})`);
+  els.pickerSeat.textContent = `Jugador ${seat + 1}, esquina de ${CORNERS[seat]}`;
+  els.pickerSearch.value = "";
+  renderPicker();
+  els.picker.showModal();
+  const selected = els.pickerList.querySelector('[aria-selected="true"]');
+  if (selected) selected.scrollIntoView({ block: "center" });
+  els.pickerSearch.focus();
+}
+
+function shownBots() {
+  const q = els.pickerSearch.value.trim().toLowerCase();
+  return catalog().filter((b) =>
+    (picker.filter === "all" || (picker.filter === "mine" ? b.mine : b.group === picker.filter)) &&
+    (!q || b.name.toLowerCase().includes(q) || (b.fullBy || b.by).toLowerCase().includes(q)));
+}
+
+function renderPicker() {
+  const bots = shownBots();
+  const current = seatRows()[picker.seat].dataset.value;
+  const items = [];
+  let group = null;
+  for (const b of bots) {
+    if (picker.filter === "all" && b.group !== group) {
+      group = b.group;
+      const heading = document.createElement("div");
+      heading.className = "picker-group";
+      heading.setAttribute("role", "presentation");
+      heading.textContent = GROUP_NAMES[group];
+      items.push(heading);
+    }
+    const option = document.createElement("button");
+    option.type = "button";
+    option.className = "picker-option";
+    option.setAttribute("role", "option");
+    option.setAttribute("aria-selected", String(b.value === current));
+    option.dataset.value = b.value;
+
+    const name = document.createElement("span");
+    name.className = "picker-name";
+    name.textContent = b.name;
+    option.append(name);
+    if (b.secret || b.mine) {
+      const tag = document.createElement("span");
+      tag.className = "picker-tag" + (b.secret ? " picker-tag--secret" : "");
+      tag.textContent = b.secret ? "Código secreto" : "Tuyo";
+      option.append(tag);
+    }
+    if (b.by) {
+      const by = document.createElement("span");
+      by.className = "picker-by";
+      by.textContent = b.at ? `${b.by} · ${timeAgo(b.at)}` : b.by;
+      if (b.fullBy) by.title = b.fullBy;
+      option.append(by);
+    }
+    items.push(option);
+  }
+  if (!bots.length) {
+    const empty = document.createElement("p");
+    empty.className = "picker-empty";
+    empty.textContent = els.pickerSearch.value.trim()
+      ? `Ningún bot coincide con “${els.pickerSearch.value.trim()}”.`
+      : "No hay bots en este grupo todavía.";
+    items.push(empty);
+  }
+  els.pickerList.replaceChildren(...items);
+  els.pickerCount.textContent = `${bots.length} ${bots.length === 1 ? "bot" : "bots"}`;
+  els.pickerRandom.disabled = !bots.length;
+}
+
+function choosePicked(value) {
+  setSeat(seatRows()[picker.seat], value);
+  els.picker.close();
+}
+
+function setPickerFilter(filter) {
+  picker.filter = filter;
+  for (const b of els.pickerFilters.querySelectorAll("button")) {
+    b.setAttribute("aria-pressed", String(b.dataset.filter === filter));
+  }
+}
+
+els.pickerSearch.addEventListener("input", renderPicker);
+// Back to the seat's button on close (Safari does not restore focus by itself).
+els.picker.addEventListener("close", () => {
+  const row = seatRows()[picker.seat];
+  if (row) row.querySelector(".pick").focus();
+});
+els.pickerFilters.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-filter]");
+  if (!button) return;
+  setPickerFilter(button.dataset.filter);
+  renderPicker();
+});
+els.pickerList.addEventListener("click", (event) => {
+  const option = event.target.closest(".picker-option");
+  if (option) choosePicked(option.dataset.value);
+});
+els.pickerRandom.addEventListener("click", () => {
+  const bots = shownBots();
+  if (bots.length) choosePicked(bots[Math.floor(Math.random() * bots.length)].value);
+});
+// Arrow keys: down from the search box into the list, then up and down through it.
+els.picker.addEventListener("keydown", (event) => {
+  if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+  const options = [...els.pickerList.querySelectorAll(".picker-option")];
+  if (!options.length) return;
+  const at = options.indexOf(document.activeElement);
+  let next;
+  if (at === -1) {
+    if (event.key !== "ArrowDown") return;
+    next = 0;
+  } else if (event.key === "ArrowDown") {
+    next = Math.min(options.length - 1, at + 1);
+  } else if (at === 0) {
+    event.preventDefault();
+    els.pickerSearch.focus();
+    return;
+  } else {
+    next = at - 1;
+  }
+  event.preventDefault();
+  options[next].focus();
+  options[next].scrollIntoView({ block: "nearest" });
+});
 
 // ---------- Runner messages ----------
 
@@ -364,7 +516,7 @@ async function startMatch(event) {
   event.preventDefault();
   if (!state.pythonReady) return;
 
-  const bots = [...els.seats.querySelectorAll("select")].map((s) => seatBot(s.value));
+  const bots = seatRows().map((row) => seatBot(row.dataset.value));
   if (bots.includes(null)) {
     setStatus("Uno de los bots ya no existe. Elige otro.", true);
     return;
@@ -747,11 +899,8 @@ els.speed.addEventListener("click", (event) => {
 });
 // "Jugar contra Claude": Claude in seat 1, back to the board, and play.
 els.playClaude.addEventListener("click", () => {
-  const first = els.seats.querySelector("select");
-  if (first && state.challenge.length) {
-    first.value = `challenge:${state.challenge[0]}`;
-    first.dispatchEvent(new Event("change"));
-  }
+  const first = seatRows()[0];
+  if (first && state.challenge.length) setSeat(first, `challenge:${state.challenge[0]}`);
   els.canvas.scrollIntoView({ block: "center" });
   if (state.pythonReady) els.setup.requestSubmit();
 });
@@ -773,7 +922,15 @@ const game = {
   // bots: [{id: "<uid>/<slot>", name, ownerName, code, updatedAt (ms)}]
   setUserBots(bots) {
     state.userBots = [...bots].sort((a, b) => b.updatedAt - a.updatedAt);
-    for (const select of els.seats.querySelectorAll("select")) fillSeat(select, select.value);
+    for (const row of seatRows()) setSeat(row, row.dataset.value);
+    if (els.picker.open) renderPicker();
+  },
+  // The signed-in user's uid, or null: marks their bots in the picker.
+  setUser(uid) {
+    state.uid = uid;
+    els.pickerMine.hidden = !uid;
+    if (!uid && picker.filter === "mine") setPickerFilter("all");
+    if (els.picker.open) renderPicker();
   },
   validateBot,
 };

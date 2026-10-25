@@ -133,6 +133,7 @@ els.signOut.addEventListener("click", () => signOut(auth));
 
 onAuthStateChanged(auth, (user) => {
   me = user;
+  game.setUser(user ? user.uid : null);
   els.signedOut.hidden = !!user;
   els.signedIn.hidden = !user;
   els.name.textContent = user ? ownerName(user) : "";

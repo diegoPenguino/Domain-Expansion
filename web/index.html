@@ -116,6 +116,30 @@
     </div>
   </section>
 
+  <dialog class="picker" id="picker" aria-labelledby="picker-title">
+    <div class="picker-head">
+      <span class="picker-bar" id="picker-bar" aria-hidden="true"></span>
+      <div>
+        <h2 id="picker-title">Elegir bot</h2>
+        <p class="picker-seat" id="picker-seat"></p>
+      </div>
+      <button class="btn btn--ghost" type="button" data-close>Cerrar</button>
+    </div>
+    <input class="input picker-search" id="picker-search" type="search" placeholder="Buscar por bot o autor" aria-label="Buscar bot" autocomplete="off">
+    <div class="picker-filters" id="picker-filters" role="group" aria-label="Mostrar">
+      <button type="button" data-filter="all" aria-pressed="true">Todos</button>
+      <button type="button" data-filter="challenge" aria-pressed="false">Reto</button>
+      <button type="button" data-filter="repo" aria-pressed="false">Originales</button>
+      <button type="button" data-filter="user" aria-pressed="false">Comunidad</button>
+      <button type="button" data-filter="mine" aria-pressed="false" hidden>Míos</button>
+    </div>
+    <div class="picker-list" id="picker-list" role="listbox" aria-labelledby="picker-title"></div>
+    <div class="picker-foot">
+      <span class="picker-count" id="picker-count" aria-live="polite"></span>
+      <button class="btn btn--ghost" type="button" id="picker-random">Al azar</button>
+    </div>
+  </dialog>
+
   <dialog class="dialog" id="code-dialog" aria-labelledby="code-title">
     <div class="dialog-head">
       <h2 id="code-title">Código</h2>
