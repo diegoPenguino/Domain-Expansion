@@ -1,10 +1,11 @@
 // Play page: picks the bots, sends their code to the sandboxed runner, and plays back the
 // frames it returns. This page never runs bot code itself.
 //
-// Bots come from three places: the repo's codes/ folder ("repo:<name>"), the challenge
-// bots in challenge/ ("challenge:<name>", whose code is not shown), and the ones people
-// upload ("user:<uid>/<slot>"), which account.js loads from Firestore and hands over
-// through the `game` object at the end of this file.
+// Bots come from four places: the repo's codes/ folder ("repo:<name>"), the challenge
+// bots in challenge/ ("challenge:<name>", whose code is not shown), the commented
+// examples in examples/ ("example:<file>"), and the ones people upload
+// ("user:<uid>/<slot>"), which account.js loads from Firestore and hands over through
+// the `game` object at the end of this file.
 
 // scripts/build_site.py replaces this with a hash of the site's files. Every URL below
 // carries it, so a visit never mixes files from two deploys (Cloudflare tells browsers to
@@ -41,6 +42,7 @@ const TRAIL_STEPS = 12;
 const EMPTY_CSS = "rgb(22, 22, 26)";
 
 const CHALLENGE_GROUP = "Reto";
+const EXAMPLE_GROUP = "Ejemplos";
 const REPO_GROUP = "Participantes originales";
 // Display names for challenge bots; the first one starts in seat 1.
 const CHALLENGE_NAMES = { claude_opus: "Claude Opus 5.5" };
@@ -99,6 +101,7 @@ const state = {
   workerSources: null,
   bots: [],
   challenge: [],
+  examples: [], // [{file, name, level, idea}] from examples/examples.json
   userBots: [],
   uid: null,
   codeCache: new Map(),
@@ -123,6 +126,14 @@ async function fetchText(url) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${url}: ${res.status}`);
   return res.text();
+}
+
+function exampleCode(file) {
+  const key = `example:${file}`;
+  if (!state.codeCache.has(key)) {
+    state.codeCache.set(key, fetchText(versioned(`examples/${encodeURIComponent(file)}.py`)));
+  }
+  return state.codeCache.get(key);
 }
 
 function challengeCode(name) {
@@ -164,6 +175,7 @@ async function init() {
     ]);
     state.bots = manifest.bots;
     state.challenge = manifest.challenge || [];
+    state.examples = manifest.examples || [];
     state.engine = engine;
     state.workerSources = { engineWorker, botWorker };
   } catch (err) {
@@ -311,6 +323,10 @@ function seatBot(value) {
     const name = value.slice("challenge:".length);
     return { name, label: challengeLabel(name), code: challengeCode(name), secret: true };
   }
+  if (value.startsWith("example:")) {
+    const example = state.examples.find((e) => `example:${e.file}` === value);
+    return example ? { name: example.name, label: example.name, code: exampleCode(example.file) } : null;
+  }
   if (value.startsWith("user:")) {
     const bot = state.userBots.find((b) => `user:${b.id}` === value);
     return bot ? { name: bot.name, label: botLabel(bot), code: Promise.resolve(bot.code) } : null;
@@ -413,6 +429,9 @@ function catalog() {
     ...state.challenge.map((name) => ({
       value: `challenge:${name}`, group: "challenge", name: challengeLabel(name), by: "Escrito por Claude", secret: true,
     })),
+    ...state.examples.map((e) => ({
+      value: `example:${e.file}`, group: "example", name: e.name, by: e.idea, level: e.level,
+    })),
     ...state.bots.map((name) => ({ value: `repo:${name}`, group: "repo", name, by: "" })),
     ...state.userBots.map((bot) => ({
       value: `user:${bot.id}`, group: "user", name: bot.name,
@@ -421,7 +440,7 @@ function catalog() {
   ];
 }
 
-const GROUP_NAMES = { challenge: CHALLENGE_GROUP, repo: REPO_GROUP, user: COMMUNITY_GROUP };
+const GROUP_NAMES = { challenge: CHALLENGE_GROUP, example: EXAMPLE_GROUP, repo: REPO_GROUP, user: COMMUNITY_GROUP };
 
 function timeAgo(ms) {
   const hours = Math.round((Date.now() - ms) / 3600000);
@@ -491,10 +510,10 @@ function renderPicker() {
     name.className = "picker-name";
     name.textContent = b.name;
     option.append(name);
-    if (b.secret || b.mine) {
+    if (b.secret || b.mine || b.level) {
       const tag = document.createElement("span");
       tag.className = "picker-tag" + (b.secret ? " picker-tag--secret" : "");
-      tag.textContent = b.secret ? "Código secreto" : "Tuyo";
+      tag.textContent = b.secret ? "Código secreto" : b.mine ? "Tuyo" : b.level;
       option.append(tag);
     }
     if (b.by) {

@@ -1,3 +1,4 @@
+import json
 import pytest
 
 from simulator import (
@@ -386,3 +387,27 @@ def test_a_match_with_two_bots_plays_to_the_end():
     result = sim.run(max_turns=50)
     assert result["turns"] == 50
     assert result["alive"] == {"1": False, "2": True, "3": True, "4": False}
+
+
+# Example bots (examples/): public, commented code shown in the "Ejemplos" group
+
+
+EXAMPLES_DIR = BOTS_DIR.parent / "examples"
+
+
+def test_examples_json_lists_every_example_file():
+    listed = {e["file"] for e in json.loads((EXAMPLES_DIR / "examples.json").read_text(encoding="utf-8"))}
+    assert listed == {p.stem for p in EXAMPLES_DIR.glob("*.py")}
+
+
+@pytest.mark.parametrize("path", sorted(EXAMPLES_DIR.glob("*.py")), ids=lambda p: p.stem)
+def test_example_bots_never_die_against_simple_rivals(path):
+    for seat in range(4):
+        bots = pacers(3)
+        bots.insert(seat, load_bot_from_source(path.read_text(encoding="utf-8"), path.stem))
+        sim = TerritoryWarSimulator(50, 50, bots)
+        for _ in range(200):
+            if not sim.step():
+                break
+        me = sim.players[str(seat + 1)]
+        assert me.alive, f"seat {seat + 1}: {me.death_reason}"

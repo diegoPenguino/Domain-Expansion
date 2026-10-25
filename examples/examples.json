@@ -1,0 +1,7 @@
+[
+  {"file": "paseante", "name": "Paseante", "level": "Fácil", "idea": "Camina al azar sin pisar terreno ajeno"},
+  {"file": "espiral", "name": "Espiral", "level": "Fácil", "idea": "Avanza recto y gira a la derecha al bloquearse"},
+  {"file": "prudente", "name": "Prudente", "level": "Media", "idea": "Rectángulos que alcanza a cerrar antes que llegue un rival"},
+  {"file": "rectangulos", "name": "Rectángulos", "level": "Difícil", "idea": "Dibuja rectángulos grandes y los cierra"},
+  {"file": "explorador", "name": "Explorador", "level": "Difícil", "idea": "Va hacia donde llega antes que los rivales"}
+]

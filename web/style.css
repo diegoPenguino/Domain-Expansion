@@ -216,9 +216,9 @@ select:hover { border-color: var(--muted); }
 .picker-seat { margin: 2px 0 0; color: var(--muted); font-size: .9em; }
 .picker .picker-search { margin: 0 20px; width: auto; min-height: 48px; }
 .picker-search::placeholder { color: var(--muted); }
-.picker-filters { display: flex; margin: 12px 20px 0; border: 1px solid var(--line-2); }
+.picker-filters { display: flex; margin: 12px 20px 0; border: 1px solid var(--line-2); overflow-x: auto; scrollbar-width: none; }
 .picker-filters button {
-  flex: 1; min-height: 40px; padding: 0 6px; background: none; border: 0; border-left: 1px solid var(--line-2);
+  flex: 1 0 auto; min-height: 40px; padding: 0 6px; background: none; border: 0; border-left: 1px solid var(--line-2);
   cursor: pointer; font-size: .92em; white-space: nowrap;
 }
 .picker-filters button:first-child { border-left: 0; }
