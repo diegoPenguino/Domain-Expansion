@@ -12,11 +12,14 @@
   <link rel="stylesheet" href="style.css?v=__VERSION__">
 </head>
 <body>
-  <header class="field">
-    <div class="wrap head">
-      <a class="back" href="https://penguino.space/projects/Domain-Expansion/">← penguino.space</a>
-      <h1>Domain Expansion</h1>
-      <p class="lede">Cuatro bots escritos en Python se disputan un tablero de 50 × 50. Cada casilla que pisan es suya, y si encierran una zona vacía se la quedan entera.</p>
+  <header class="top">
+    <div class="wrap top-row">
+      <a class="back" href="https://penguino.space/projects/Domain-Expansion/" aria-label="Volver a penguino.space">←<span class="back-text">&nbsp;penguino.space</span></a>
+      <h1 class="title">Domain Expansion</h1>
+      <nav class="top-nav" aria-label="Secciones">
+        <a href="#reto">El reto</a>
+        <a href="#reglas">Cómo se juega</a>
+      </nav>
     </div>
   </header>
 
@@ -35,61 +38,82 @@
         </label>
         <span class="turn" id="turn" aria-live="off">Turno 0</span>
       </div>
-      <canvas class="chart" id="chart" role="img" aria-label="Casillas de cada bot en cada turno" hidden></canvas>
     </section>
 
-    <section class="panel" aria-label="Partida">
+    <section class="panel" aria-labelledby="panel-title">
       <form id="setup">
-        <fieldset class="seats">
-          <legend>Bots</legend>
-          <p class="challenge-note">Reto: Claude Opus 5.5 empieza en el primer lugar y su código es secreto. ¿Puedes ganarle?</p>
-          <div id="seats"></div>
-        </fieldset>
+        <h2 id="panel-title">Partida</h2>
+        <p class="panel-sub">Elige un bot para cada esquina.</p>
+        <ol class="roster" id="seats"></ol>
 
-        <div class="controls">
-          <label class="speed">
-            Velocidad
-            <select id="speed">
-              <option value="15">Lenta</option>
-              <option value="60" selected>Normal</option>
-              <option value="240">Rápida</option>
-              <option value="0">Ir al final</option>
-            </select>
-          </label>
-          <button class="btn" id="play" type="submit" disabled>Jugar</button>
+        <div class="speed" id="speed" role="group" aria-label="Velocidad">
+          <button type="button" data-speed="15" aria-pressed="false">Lenta</button>
+          <button type="button" data-speed="60" aria-pressed="true">Normal</button>
+          <button type="button" data-speed="240" aria-pressed="false">Rápida</button>
+          <button type="button" data-speed="0" aria-pressed="false">Al final</button>
         </div>
+        <button class="btn play" id="play" type="submit" disabled>Jugar</button>
         <p class="status" id="status" role="status">Cargando Python…</p>
       </form>
 
-      <ol class="scores" id="scores" aria-label="Puntajes"></ol>
+      <div id="chart-box" hidden>
+        <canvas class="chart" id="chart" role="img" aria-label="Casillas de cada bot en cada turno"></canvas>
+        <p class="chart-note">Casillas de cada bot, turno a turno.</p>
+      </div>
     </section>
   </main>
 
-  <section class="wrap account" id="account" aria-labelledby="account-title" hidden>
-    <h2 id="account-title">Tus bots</h2>
-    <p class="account-intro">Sube hasta 5 bots en Python. Cualquiera puede ver su código y elegirlos para jugar. Antes de guardarlo, tu bot juega 10 turnos de prueba.</p>
+  <section class="band" id="reto">
+    <div class="wrap duo">
+      <div class="card card--dark">
+        <h2>¿Puedes ganarle a Claude?</h2>
+        <p>Claude Opus 5.5 escribió un bot que gana más del 90 % de sus partidas contra los participantes originales. Es el único con el código secreto. Sube el tuyo y ponlo contra él desde distintas esquinas.</p>
+        <div class="actions">
+          <a class="btn" href="#account">Subir mi bot</a>
+          <button class="btn btn--on-dark" id="play-claude" type="button">Jugar contra Claude</button>
+        </div>
+      </div>
 
-    <div id="signed-out">
-      <button class="btn" id="sign-in" type="button">Entrar con Google</button>
+      <div class="card" id="account" aria-labelledby="account-title" hidden>
+        <h2 id="account-title">Tus bots</h2>
+        <p class="account-intro">Entra con Google para subir hasta 5 bots en Python. Todos pueden ver su código y elegirlos para jugar. Antes de guardarlo, tu bot juega 10 turnos de prueba.</p>
+
+        <div id="signed-out">
+          <button class="btn" id="sign-in" type="button">Entrar con Google</button>
+        </div>
+
+        <div id="signed-in" hidden>
+          <p class="account-user">
+            <span id="account-name"></span>
+            <button class="link-btn" id="sign-out" type="button">Salir</button>
+          </p>
+          <ul class="my-bots" id="my-bots"></ul>
+          <button class="btn" id="new-bot" type="button">Nuevo bot</button>
+        </div>
+
+        <p class="status" id="account-status" role="status"></p>
+      </div>
     </div>
-
-    <div id="signed-in" hidden>
-      <p class="account-user">
-        <span id="account-name"></span>
-        <button class="link-btn" id="sign-out" type="button">Salir</button>
-      </p>
-      <ul class="my-bots" id="my-bots"></ul>
-      <button class="btn" id="new-bot" type="button">Nuevo bot</button>
-    </div>
-
-    <p class="status" id="account-status" role="status"></p>
   </section>
 
-  <section class="wrap rules">
-    <h2>Cómo se juega</h2>
-    <p>En cada turno, cada bot avanza una casilla en horizontal o vertical. Solo puede pisar casillas vacías o propias: si sale del tablero, pisa territorio ajeno, hace un movimiento inválido, su código falla o tarda más de 2 segundos en decidir, queda eliminado. Gana quien tenga más casillas al final, después de 1000 turnos o cuando el tablero se llena.</p>
-    <p>Un bot es una función <code>next_step</code> que recibe el tablero y su posición, y devuelve la casilla a la que quiere moverse. Los bots del grupo Participantes originales son los del <a href="https://github.com/diegoPenguino/Domain-Expansion">repositorio</a>, escritos por participantes del OBI-CAMP 2026; los de Comunidad los subieron visitantes de esta página.</p>
-    <p>El grupo Reto tiene un bot escrito por Claude Opus 5.5. Puedes ver el código de todos los demás bots, pero el suyo no. Sube un bot en “Tus bots”, ponlo contra Claude y prueba en distintas esquinas.</p>
+  <section class="wrap rules" id="reglas" aria-labelledby="rules-title">
+    <div>
+      <h2 id="rules-title">Cómo se juega</h2>
+      <dl class="facts">
+        <dt>Tablero</dt><dd>50 × 50, un bot en cada esquina</dd>
+        <dt>Turno</dt><dd>Cada bot avanza una casilla en horizontal o vertical</dd>
+        <dt>Territorio</dt><dd>Lo que pisa es suyo; si encierra una zona vacía, también</dd>
+        <dt>Eliminación</dt><dd>Salir del tablero, pisar territorio ajeno, devolver un movimiento inválido, fallar o tardar más de 2 s</dd>
+        <dt>Final</dt><dd>1000 turnos o tablero lleno; gana quien tenga más casillas</dd>
+      </dl>
+    </div>
+    <div>
+      <p>Un bot es una función de Python que recibe el tablero y su posición, y devuelve la casilla a la que se mueve:</p>
+      <pre class="code"><code>def next_step(board, pos, players, me):
+    fila, columna = pos
+    return (fila + 1, columna)</code></pre>
+      <p>Los bots de Participantes originales son los del <a href="https://github.com/diegoPenguino/Domain-Expansion">repositorio</a>, escritos en el OBI-CAMP 2026. Los de Comunidad los subieron visitantes de esta página, y el de Reto lo escribió Claude.</p>
+    </div>
   </section>
 
   <dialog class="dialog" id="code-dialog" aria-labelledby="code-title">
