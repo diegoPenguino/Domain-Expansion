@@ -54,6 +54,12 @@ class PlayerState:
     pos: Position
     alive: bool = True
     death_reason: str | None = None
+    # An empty seat: no bot plays from this corner and it owns no cells.
+    empty: bool = False
+
+
+def _empty_seat(*args: object) -> Move:
+    raise RuntimeError("an empty seat never plays")
 
 
 class SimulationResult(TypedDict):
@@ -91,12 +97,15 @@ class TerritoryWarSimulator:
         self,
         rows: int,
         cols: int,
-        player_functions: Sequence[NextStepFn],
+        player_functions: Sequence[NextStepFn | None],
         player_names: Sequence[str] | None = None,
         move_format: str = "absolute",
     ):
+        """player_functions has one entry per corner; None leaves that corner empty."""
         if len(player_functions) != 4:
             raise ValueError("Exactly 4 player functions are required")
+        if sum(f is not None for f in player_functions) < 2:
+            raise ValueError("At least 2 players are required")
         if player_names is not None and len(player_names) != 4:
             raise ValueError("Exactly 4 player names are required")
         if rows < 2 or cols < 2:
@@ -121,6 +130,16 @@ class TerritoryWarSimulator:
             pid = str(i)
             pname = player_names[i - 1] if player_names is not None else f"player{i}"
             pos = corners[i - 1]
+            if next_step is None:
+                self.players[pid] = PlayerState(
+                    player_id=pid,
+                    player_name=pname,
+                    next_step=_empty_seat,
+                    pos=pos,
+                    alive=False,
+                    empty=True,
+                )
+                continue
             self.players[pid] = PlayerState(
                 player_id=pid,
                 player_name=pname,
@@ -609,6 +628,8 @@ class PygameRenderer:
 
         # Draw current player positions with a slightly darker shade.
         for pid, player in players.items():
+            if player.empty:
+                continue
             r, c = player.pos
             base_color = PLAYER_COLORS.get(pid, (110, 110, 110))
             marker_color = darken_color(base_color)

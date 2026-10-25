@@ -348,3 +348,41 @@ def test_challenge_bots_load_and_play(path):
     for _ in range(20):
         sim.step()
     assert sim.players["1"].alive, sim.players["1"].death_reason
+
+
+# Empty seats (matches with 2 or 3 bots)
+
+
+def test_empty_seat_owns_no_cell_and_never_plays():
+    sim = TerritoryWarSimulator(6, 6, [make_pacer(), None, make_pacer(), None])
+    assert sim.board[0][5] == EMPTY
+    assert sim.board[5][5] == EMPTY
+    assert sim.players["2"].empty and not sim.players["2"].alive
+    assert sim.players["2"].death_reason is None
+    for _ in range(5):
+        assert sim.step()
+    assert sim.territory_count() == {"1": 2, "2": 0, "3": 2, "4": 0}
+
+
+def test_bots_still_get_four_positions_with_empty_seats():
+    seen = []
+
+    def spy(board, pos, positions, me):
+        seen.append(positions)
+        return (pos[0] + 1, pos[1])
+
+    sim = TerritoryWarSimulator(6, 6, [spy, None, None, make_pacer()])
+    sim.step()
+    assert seen[0] == [(0, 0), (0, 5), (5, 0), (5, 5)]
+
+
+def test_two_bots_are_the_minimum():
+    with pytest.raises(ValueError, match="At least 2 players"):
+        TerritoryWarSimulator(6, 6, [make_pacer(), None, None, None])
+
+
+def test_a_match_with_two_bots_plays_to_the_end():
+    sim = TerritoryWarSimulator(10, 10, [None, *pacers(2), None])
+    result = sim.run(max_turns=50)
+    assert result["turns"] == 50
+    assert result["alive"] == {"1": False, "2": True, "3": True, "4": False}

@@ -2,7 +2,8 @@
 // move it sends an "ask" to the runner, which forwards it to that bot's own worker and
 // answers with the move, a death reason, or a timeout.
 //
-// Receives {type: "play", matchId, engine, bots: [{name, code}], rows, cols, maxTurns}
+// Receives {type: "play", matchId, engine, bots: [{name, code} or {empty: true}], rows, cols,
+// maxTurns}; an empty seat leaves that corner without a bot.
 // and sends back one "frame" per turn, then "done", or "error".
 
 const PYODIDE_URL = "https://cdn.jsdelivr.net/pyodide/v0.28.3/full/";
@@ -19,9 +20,11 @@ def _remote(*args):
 
 sim = None
 
-def new_match(names_json, rows, cols):
+def new_match(seats_json, rows, cols):
     global sim
-    sim = simulator.TerritoryWarSimulator(rows, cols, [_remote] * 4, json.loads(names_json))
+    seats = json.loads(seats_json)
+    functions = [None if seat["empty"] else _remote for seat in seats]
+    sim = simulator.TerritoryWarSimulator(rows, cols, functions, [seat["name"] for seat in seats])
 
 def start_turn():
     return sim.start_turn()
@@ -53,7 +56,7 @@ def frame():
         "turn": sim.turn,
         "board": "".join("".join(row) for row in sim.board),
         "players": [
-            {"pos": list(p.pos), "alive": p.alive, "reason": p.death_reason}
+            {"pos": list(p.pos), "alive": p.alive, "reason": p.death_reason, "empty": p.empty}
             for p in players
         ],
     })
@@ -112,11 +115,14 @@ async function play(msg) {
   const send = (data) => postMessage({ ...data, matchId: msg.matchId });
 
   loadEngine(msg.engine);
-  py.new_match(JSON.stringify(msg.bots.map((bot) => bot.name)), msg.rows, msg.cols);
+  const seats = msg.bots.map((bot) => ({ name: bot.name || "", empty: !!bot.empty }));
+  py.new_match(JSON.stringify(seats), msg.rows, msg.cols);
 
   const loads = await Promise.all(
     msg.bots.map((bot, seat) =>
-      ask(msg.matchId, seat, { type: "load", name: bot.name, code: bot.code, engine: msg.engine }),
+      bot.empty
+        ? { ok: true }
+        : ask(msg.matchId, seat, { type: "load", name: bot.name, code: bot.code, engine: msg.engine }),
     ),
   );
   if (stale()) return;

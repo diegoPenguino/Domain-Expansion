@@ -21,6 +21,9 @@ const MAX_TURNS = 1000;
 // eliminated; the runner stops its worker.
 const LIMITS_MS = { move: 2000, load: 5000 };
 const SEATS = 4;
+// A seat with no bot: matches can have 2, 3 or 4 bots.
+const EMPTY_SEAT = "empty";
+const MIN_BOTS = 2;
 
 // Same colors as PLAYER_COLORS in simulator.py
 const COLORS = {
@@ -195,6 +198,12 @@ function renderSeats() {
     row.className = "seat";
     row.style.setProperty("--color", `var(--p${i + 1})`);
 
+    const handle = document.createElement("button");
+    handle.type = "button";
+    handle.className = "seat-handle";
+    handle.addEventListener("pointerdown", (event) => startDrag(event, row));
+    handle.addEventListener("keydown", (event) => moveWithKeys(event, row));
+
     const bar = document.createElement("span");
     bar.className = "seat-bar";
     bar.setAttribute("aria-hidden", "true");
@@ -221,7 +230,7 @@ function renderSeats() {
     view.addEventListener("click", () => showCode(row.dataset.value));
     meta.append(stateEl, view);
 
-    row.append(bar, pick, cells, meta);
+    row.append(handle, bar, pick, cells, meta);
     els.seats.append(row);
     setSeat(row, value);
   });
@@ -253,10 +262,16 @@ function setSeat(row, value) {
   const bot = seatBot(value);
   const i = seatRows().indexOf(row);
   // Challenge bots show their display name ("Claude Opus 5.5"); the rest, the bot's name.
-  const shown = bot.secret ? bot.label : bot.name;
+  const shown = bot.secret || bot.empty ? bot.label : bot.name;
+  row.classList.toggle("is-empty", !!bot.empty);
   row.querySelector(".pick-name").textContent = shown;
   row.querySelector(".pick").setAttribute("aria-label", `Jugador ${i + 1}, ${CORNERS[i]}: ${shown}. Cambiar bot`);
+  row.querySelector(".seat-handle").setAttribute(
+    "aria-label",
+    `Mover ${shown}, esquina de ${CORNERS[i]}. Flechas arriba y abajo para cambiarlo de esquina`,
+  );
   const view = row.querySelector(".seat-code");
+  view.hidden = !!bot.empty;
   view.textContent = bot.secret ? "Código secreto" : "Ver código";
   view.setAttribute("aria-label", `${view.textContent}: ${shown}`);
   // Numbers from a match belong to the bot that played it, not to a new pick.
@@ -289,6 +304,9 @@ function botLabel(bot) {
 // What a seat's value refers to: {name, label, code: Promise<string>, secret?}, or null if
 // an uploaded bot was deleted.
 function seatBot(value) {
+  if (value === EMPTY_SEAT) {
+    return { name: "", label: "Asiento vacío", code: Promise.resolve(null), empty: true };
+  }
   if (value.startsWith("challenge:")) {
     const name = value.slice("challenge:".length);
     return { name, label: challengeLabel(name), code: challengeCode(name), secret: true };
@@ -321,6 +339,67 @@ async function showCode(value) {
   } catch (err) {
     els.codeBody.textContent = "No se pudo cargar el código.";
   }
+}
+
+// ---------- Moving bots between corners ----------
+
+// Each position is a fixed corner, so moving a bot swaps it with the bot in the target
+// position. The numbers of both rows are cleared (setSeat does it).
+function swapSeats(a, b) {
+  const value = a.dataset.value;
+  setSeat(a, b.dataset.value);
+  setSeat(b, value);
+  const moved = seatBot(value);
+  const to = seatRows().indexOf(b);
+  setStatus(`${moved.empty ? "El asiento vacío" : moved.secret ? moved.label : moved.name} pasó a la esquina de ${CORNERS[to]}.`);
+}
+
+// Drag a row by its handle onto another row. Pointer events cover mouse, pen and touch.
+function startDrag(event, row) {
+  if (event.pointerType === "mouse" && event.button !== 0) return;
+  event.preventDefault();
+  const handle = event.currentTarget;
+  handle.setPointerCapture(event.pointerId);
+  const startY = event.clientY;
+  const others = seatRows().filter((r) => r !== row);
+  let target = null;
+  row.classList.add("is-dragging");
+
+  const move = (e) => {
+    row.style.transform = `translateY(${e.clientY - startY}px)`;
+    const over = others.find((r) => {
+      const box = r.getBoundingClientRect();
+      return e.clientY >= box.top && e.clientY <= box.bottom;
+    }) || null;
+    if (over === target) return;
+    if (target) target.classList.remove("is-drop-target");
+    target = over;
+    if (target) target.classList.add("is-drop-target");
+  };
+  const end = (e) => {
+    handle.removeEventListener("pointermove", move);
+    handle.removeEventListener("pointerup", end);
+    handle.removeEventListener("pointercancel", end);
+    row.classList.remove("is-dragging");
+    row.style.transform = "";
+    if (!target) return;
+    target.classList.remove("is-drop-target");
+    if (e.type === "pointerup") swapSeats(row, target);
+  };
+  handle.addEventListener("pointermove", move);
+  handle.addEventListener("pointerup", end);
+  handle.addEventListener("pointercancel", end);
+}
+
+// Arrow keys on a focused handle move that bot one corner up or down; focus follows it.
+function moveWithKeys(event, row) {
+  if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+  event.preventDefault();
+  const rows = seatRows();
+  const other = rows[rows.indexOf(row) + (event.key === "ArrowUp" ? -1 : 1)];
+  if (!other) return;
+  swapSeats(row, other);
+  other.querySelector(".seat-handle").focus();
 }
 
 // ---------- Bot picker ----------
@@ -375,6 +454,22 @@ function renderPicker() {
   const bots = shownBots();
   const current = seatRows()[picker.seat].dataset.value;
   const items = [];
+  if (picker.filter === "all" && !els.pickerSearch.value.trim()) {
+    const option = document.createElement("button");
+    option.type = "button";
+    option.className = "picker-option picker-option--empty";
+    option.setAttribute("role", "option");
+    option.setAttribute("aria-selected", String(current === EMPTY_SEAT));
+    option.dataset.value = EMPTY_SEAT;
+    const name = document.createElement("span");
+    name.className = "picker-name";
+    name.textContent = "Dejar vacío";
+    const by = document.createElement("span");
+    by.className = "picker-by";
+    by.textContent = "Nadie juega desde esta esquina";
+    option.append(name, by);
+    items.push(option);
+  }
   let group = null;
   for (const b of bots) {
     if (picker.filter === "all" && b.group !== group) {
@@ -534,6 +629,10 @@ async function startMatch(event) {
     setStatus("Uno de los bots ya no existe. Elige otro.", true);
     return;
   }
+  if (bots.filter((bot) => !bot.empty).length < MIN_BOTS) {
+    setStatus(`Elige al menos ${MIN_BOTS} bots para jugar.`, true);
+    return;
+  }
   let codes;
   try {
     codes = await Promise.all(bots.map((bot) => bot.code));
@@ -566,7 +665,7 @@ async function startMatch(event) {
       type: "play",
       matchId: state.matchId,
       engine: state.engine,
-      bots: bots.map((bot, i) => ({ name: bot.name, code: codes[i] })),
+      bots: bots.map((bot, i) => (bot.empty ? { empty: true } : { name: bot.name, code: codes[i] })),
       rows: ROWS,
       cols: COLS,
       maxTurns: MAX_TURNS,
@@ -649,7 +748,7 @@ function finishTest(result) {
 
 function addFrame(frame) {
   frame.players.forEach((p, i) => {
-    if (!p.alive && state.deathTurns[i] === null) state.deathTurns[i] = frame.turn;
+    if (!p.alive && !p.empty && state.deathTurns[i] === null) state.deathTurns[i] = frame.turn;
   });
   frame.counts = countCells(frame.board);
   frame.captured = capturedCells(state.frames[state.frames.length - 1], frame);
@@ -806,7 +905,7 @@ function drawTrails(ctx, cell, index) {
     if (!frame) continue;
     ctx.fillStyle = `rgba(255, 255, 255, ${0.15 + 0.45 * (1 - back / TRAIL_STEPS)})`;
     for (const p of frame.players) {
-      ctx.fillRect(p.pos[1] * cell + inset, p.pos[0] * cell + inset, dot, dot);
+      if (!p.empty) ctx.fillRect(p.pos[1] * cell + inset, p.pos[0] * cell + inset, dot, dot);
     }
   }
 }
@@ -815,6 +914,7 @@ function drawTrails(ctx, cell, index) {
 function drawHeads(ctx, cell, players) {
   const line = Math.max(1, Math.round(cell * 0.14));
   players.forEach((p, i) => {
+    if (p.empty) return;
     const x = p.pos[1] * cell;
     const y = p.pos[0] * cell;
     const [r, g, b] = COLORS[i + 1].map((v) => Math.floor(v * MARKER_FACTOR));
@@ -849,6 +949,7 @@ function drawChart(index) {
   ctx.lineWidth = 2 * dpr;
   ctx.lineJoin = "round";
   for (let p = 0; p < 4; p++) {
+    if (frames[0].players[p].empty) continue;
     const [r, g, b] = COLORS[p + 1];
     ctx.strokeStyle = `rgb(${r}, ${g}, ${b})`;
     ctx.beginPath();
@@ -868,6 +969,7 @@ function renderScores(frame) {
   seatRows().forEach((row, i) => {
     if (row.dataset.match !== String(state.matchId)) return;
     const p = frame.players[i];
+    if (p.empty) return;
     row.classList.toggle("is-dead", !p.alive);
     row.classList.toggle("is-leader", counts[i] === best && best > 1);
     row.querySelector(".seat-cells").textContent = String(counts[i]);
