@@ -12,6 +12,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "_site"
 
+# Bots in codes/ that stay out of the web page: templates and examples, not participants.
+HIDDEN_BOTS = {"player1", "player2", "player3"}
+
 # Files whose URLs carry the version, and the placeholder they use.
 VERSIONED = ["index.html", "runner.html", "app.js", "runner.js"]
 PLACEHOLDER = "__VERSION__"
@@ -27,7 +30,7 @@ def main() -> None:
     bots_out.mkdir()
     names = []
     for path in sorted((ROOT / "codes").glob("*.py"), key=lambda p: p.stem.lower()):
-        if path.stem == "__init__":
+        if path.stem == "__init__" or path.stem in HIDDEN_BOTS:
             continue
         shutil.copy2(path, bots_out / path.name)
         names.append(path.stem)
