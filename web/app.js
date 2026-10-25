@@ -20,7 +20,7 @@ const MAX_TURNS = 1000;
 // Time a bot gets to answer one move, and to load its code. A bot over the limit is
 // eliminated; the runner stops its worker.
 const LIMITS_MS = { move: 2000, load: 5000 };
-const DEFAULT_SEATS = ["ignacio", "mia", "diego", "ming"];
+const SEATS = 4;
 
 // Same colors as PLAYER_COLORS in simulator.py
 const COLORS = {
@@ -189,7 +189,8 @@ function bootRunner() {
 // bot is the row's data-value ("challenge:<name>", "repo:<name>" or "user:<uid>/<slot>").
 function renderSeats() {
   els.seats.replaceChildren();
-  DEFAULT_SEATS.forEach((fallback, i) => {
+  const start = startingSeats();
+  start.forEach((value, i) => {
     const row = document.createElement("li");
     row.className = "seat";
     row.style.setProperty("--color", `var(--p${i + 1})`);
@@ -222,9 +223,21 @@ function renderSeats() {
 
     row.append(bar, pick, cells, meta);
     els.seats.append(row);
-    const name = state.bots.includes(fallback) ? fallback : state.bots[i % state.bots.length];
-    setSeat(row, i === 0 && state.challenge.length ? `challenge:${state.challenge[0]}` : `repo:${name}`);
+    setSeat(row, value);
   });
+}
+
+// Claude always starts in seat 1; the other seats get original bots picked at random,
+// so each visit starts with a different match.
+function startingSeats() {
+  const pool = [...state.bots];
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  const seats = state.challenge.length ? [`challenge:${state.challenge[0]}`] : [];
+  while (seats.length < SEATS) seats.push(`repo:${pool[(seats.length) % pool.length]}`);
+  return seats;
 }
 
 function seatRows() {
