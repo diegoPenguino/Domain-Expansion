@@ -119,10 +119,28 @@ select:hover { border-color: var(--muted); }
 /* Roster: the seat picker and the scoreboard are the same four rows */
 .roster { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
 .seat {
-  display: grid; grid-template-columns: 6px minmax(0, 1fr) auto; gap: 0 14px;
-  padding: 8px 0 10px; border-bottom: 1px solid var(--line);
+  display: grid; grid-template-columns: 28px 6px minmax(0, 1fr) auto; gap: 0 12px;
+  padding: 8px 0 10px; border-bottom: 1px solid var(--line); background: var(--bg);
 }
 .seat-bar { grid-row: span 2; background: var(--color); }
+
+/* Drag handle: six dots; drag onto another row (or use the arrow keys) to swap corners */
+.seat-handle {
+  grid-row: span 2; align-self: stretch; display: grid; place-items: center;
+  min-height: 44px; margin: -8px 0 -10px; padding: 0;
+  background: transparent; border: 0; cursor: grab; touch-action: none;
+}
+/* Two columns of three dots */
+.seat-handle::before {
+  content: ""; width: 12px; height: 19px;
+  background: radial-gradient(circle, var(--muted) 1.6px, transparent 2.1px) 0 0 / 6px 6.5px;
+}
+.seat-handle:hover { background-color: var(--soft); }
+.seat-handle:active { cursor: grabbing; }
+.seat.is-dragging { position: relative; z-index: 2; background: var(--soft); outline: 1px solid var(--line-2); }
+.seat.is-drop-target { background: var(--soft-2); outline: 2px solid var(--accent); outline-offset: -2px; }
+.seat.is-empty .pick { color: var(--muted); font-weight: 400; font-style: italic; }
+.seat.is-empty .seat-bar { opacity: .35; }
 /* The bot's name is the button that opens the picker */
 .pick {
   display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 40px;
@@ -136,7 +154,7 @@ select:hover { border-color: var(--muted); }
 }
 .pick:hover { color: var(--accent); }
 .seat-cells { align-self: center; min-width: 4ch; font-variant-numeric: tabular-nums; text-align: right; }
-.seat-meta { grid-column: 2 / 4; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 14px; color: var(--muted); font-size: .88em; line-height: 1.4; }
+.seat-meta { grid-column: 3 / 5; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 14px; color: var(--muted); font-size: .88em; line-height: 1.4; }
 .seat-state { overflow-wrap: anywhere; }
 .seat-state:empty { display: none; }
 .seat .link-btn { min-height: 32px; font-size: inherit; }
@@ -220,6 +238,7 @@ select:hover { border-color: var(--muted); }
 .picker-by { grid-column: 1; color: var(--muted); font-size: .88em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .picker-tag { grid-column: 2; grid-row: 1 / span 2; font-size: .82em; color: var(--muted); border: 1px solid var(--line-2); padding: 1px 8px; white-space: nowrap; }
 .picker-tag--secret { color: var(--field-ink); background: var(--field); border-color: var(--field); }
+.picker-option--empty .picker-name { font-weight: 400; font-style: italic; }
 .picker-empty { margin: 0; padding: 32px 20px; color: var(--muted); text-align: center; }
 .picker-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 20px; border-top: 1px solid var(--line); }
 .picker-count { color: var(--muted); font-size: .9em; }
