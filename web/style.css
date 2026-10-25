@@ -47,37 +47,44 @@ code { font-family: var(--code); font-size: .88em; }
 .wrap { max-width: var(--max); margin: 0 auto; padding-left: var(--gutter); padding-right: var(--gutter); }
 .field { background: var(--field); color: var(--field-ink); }
 
-/* Header */
-.head { padding-top: clamp(20px, 3vw, 32px); padding-bottom: clamp(36px, 5vw, 64px); }
-.back { display: inline-flex; align-items: center; min-height: 44px; color: var(--field-muted); text-decoration: none; }
+/* Header: one slim bar; the page is a tool, the game is the content */
+.top { background: var(--field); color: var(--field-ink); }
+.top-row { display: flex; align-items: center; gap: 24px; min-height: 64px; }
+.back { display: inline-flex; align-items: center; min-height: 44px; color: var(--field-muted); text-decoration: none; white-space: nowrap; }
 .back:hover { color: var(--field-ink); }
-h1 { margin: clamp(16px, 3vw, 32px) 0 0; font-weight: 300; font-size: clamp(44px, 7vw, 88px); line-height: 1; letter-spacing: -.03em; }
-.lede { max-width: 40em; margin: 18px 0 0; color: var(--field-muted); font-size: clamp(18px, 1rem + .4vw, 22px); }
-h2 { font-weight: 500; font-size: clamp(26px, 3vw, 34px); letter-spacing: -.02em; line-height: 1.1; margin: 0 0 16px; }
+.title { margin: 0; font-weight: 400; font-size: 26px; letter-spacing: -.01em; line-height: 1.1; }
+.top-nav { margin-left: auto; display: flex; gap: 20px; }
+.top-nav a { display: inline-flex; align-items: center; min-height: 44px; color: var(--field-muted); text-decoration: none; }
+.top-nav a:hover { color: var(--field-ink); }
+@media (max-width: 640px) {
+  .top-nav, .back-text { display: none; }
+  .title { font-size: 22px; }
+}
+h2 { font-weight: 500; font-size: clamp(26px, 3vw, 34px); letter-spacing: -.02em; line-height: 1.1; margin: 0 0 12px; }
 
-/* Layout */
+/* The table: board on the left, one panel with everything you touch on the right */
 .game {
   display: grid;
-  gap: clamp(28px, 4vw, 56px);
-  padding-top: clamp(28px, 4vw, 56px);
+  gap: clamp(24px, 3vw, 40px);
+  padding-top: clamp(20px, 3vw, 32px);
+  padding-bottom: clamp(40px, 6vw, 64px);
   align-items: start;
 }
-@media (min-width: 900px) {
-  .game { grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); }
+@media (min-width: 960px) {
+  .game { grid-template-columns: minmax(0, 1fr) 400px; }
 }
 
-/* Board */
-.board-col { min-width: 0; }
-.board-frame { position: relative; max-width: 640px; aspect-ratio: 1; background: var(--empty); }
+/* Board: as large as the screen allows, so it fits with its controls */
+.board-col { min-width: 0; --board: min(680px, calc(100vh - 170px)); }
+@media (max-width: 959px) { .board-col { --board: 680px; } }
+.board-frame { position: relative; max-width: max(320px, var(--board)); aspect-ratio: 1; background: var(--empty); }
 #board { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
 .board-msg {
   position: absolute; inset: 0; margin: 0;
   display: grid; place-items: center; padding: 24px; text-align: center;
   color: var(--field-muted);
 }
-
-.chart { display: block; width: 100%; max-width: 640px; height: 120px; margin-top: 14px; background: var(--empty); }
-.playback { display: flex; align-items: center; gap: 14px; max-width: 640px; margin-top: 14px; }
+.playback { display: flex; align-items: center; gap: 14px; max-width: max(320px, var(--board)); margin-top: 12px; }
 .scrub { flex: 1; display: flex; align-items: center; min-height: 44px; }
 .scrub input { width: 100%; accent-color: var(--accent); }
 .turn { min-width: 6.5em; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -89,6 +96,7 @@ h2 { font-weight: 500; font-size: clamp(26px, 3vw, 34px); letter-spacing: -.02em
   background: var(--accent); color: #fbf7f5;
   border: 1px solid var(--accent); border-radius: 0;
   cursor: pointer; transition: background .2s, color .2s;
+  text-decoration: none;
 }
 .btn:hover { background: #6f1625; border-color: #6f1625; }
 .btn:disabled { background: var(--line-2); border-color: var(--line-2); color: var(--muted); cursor: default; }
@@ -103,36 +111,57 @@ select {
 }
 select:hover { border-color: var(--muted); }
 
-/* Setup panel */
-.seats { border: 0; margin: 0; padding: 0; }
-.challenge-note { margin: 0 0 14px; color: var(--muted); }
-.seats legend { padding: 0; margin-bottom: 10px; font-size: clamp(22px, 2.4vw, 28px); font-weight: 500; letter-spacing: -.02em; }
-.seat { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; gap: 12px; margin-bottom: 10px; }
-.seat-code { padding: 0 14px; }
-.swatch { width: 14px; height: 44px; background: var(--color); }
-.controls { display: flex; align-items: end; gap: 12px; margin-top: 18px; }
-.speed { flex: 1; display: grid; gap: 4px; color: var(--muted); font-size: .9em; }
-.speed select { color: var(--text); font-size: 1.11em; }
-.status { min-height: 1.6em; margin: 12px 0 0; color: var(--muted); }
+/* Panel */
+.panel h2 { margin-bottom: 4px; }
+.panel-sub { margin: 0 0 14px; color: var(--muted); }
+
+/* Roster: the seat picker and the scoreboard are the same four rows */
+.roster { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.seat {
+  display: grid; grid-template-columns: 6px minmax(0, 1fr) auto; gap: 0 14px;
+  padding: 8px 0 10px; border-bottom: 1px solid var(--line);
+}
+.seat-bar { grid-row: span 2; background: var(--color); }
+.seat select {
+  min-height: 40px; padding: 0 24px 0 0; border: 0;
+  font-size: 1.05em; font-weight: 500;
+  background-color: transparent; background-position: right 4px center;
+}
+.seat select:hover { color: var(--accent); }
+.seat-cells { align-self: center; min-width: 4ch; font-variant-numeric: tabular-nums; text-align: right; }
+.seat-meta { grid-column: 2 / 4; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 14px; color: var(--muted); font-size: .88em; line-height: 1.4; }
+.seat-state { overflow-wrap: anywhere; }
+.seat-state:empty { display: none; }
+.seat .link-btn { min-height: 32px; font-size: inherit; }
+.seat.is-dead select { color: var(--muted); }
+.seat.is-leader .seat-cells { color: var(--accent); font-weight: 600; }
+
+/* Speed: four buttons instead of a dropdown */
+.speed { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 18px; border: 1px solid var(--line-2); }
+.speed button { min-height: 44px; padding: 0 4px; background: none; border: 0; border-left: 1px solid var(--line-2); cursor: pointer; }
+.speed button:first-child { border-left: 0; }
+.speed button:hover { background: var(--soft); }
+.speed button[aria-pressed="true"] { background: var(--text); color: var(--bg); }
+.play { width: 100%; min-height: 52px; margin-top: 10px; font-size: 1.1em; }
+.status { min-height: 1.6em; margin: 10px 0 0; color: var(--muted); }
 .status.is-error { color: var(--accent); }
 
-/* Scores */
-.scores { list-style: none; margin: 28px 0 0; padding: 0; border-top: 1px solid var(--line); }
-.score {
-  display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; gap: 4px 12px;
-  padding: 12px 0; border-bottom: 1px solid var(--line);
-}
-.score .swatch { height: 100%; min-height: 24px; grid-row: span 2; }
-.score-name { font-weight: 500; overflow-wrap: anywhere; }
-.score-cells { font-variant-numeric: tabular-nums; text-align: right; }
-.score-state { grid-column: 2 / 4; color: var(--muted); font-size: .9em; overflow-wrap: anywhere; }
-.score.is-dead .score-name { color: var(--muted); }
-.score.is-leader .score-cells { color: var(--accent); font-weight: 600; }
+.chart { display: block; width: 100%; height: 90px; margin-top: 18px; background: var(--empty); }
+.chart-note { margin: 6px 0 0; color: var(--muted); font-size: .88em; }
 
-/* Your bots */
-.account { padding-top: clamp(56px, 7vw, 100px); }
-.account > * { max-width: 40em; }
-.account-intro { margin: 0 0 20px; color: var(--muted); }
+/* Challenge and your bots, side by side */
+.band { background: var(--soft); padding: clamp(40px, 6vw, 72px) 0; }
+.duo { display: grid; gap: 24px; align-items: start; }
+@media (min-width: 860px) { .duo { grid-template-columns: 1fr 1fr; } }
+.card { padding: clamp(22px, 3vw, 32px); background: var(--bg); border: 1px solid var(--line); }
+.card > p { margin: 0 0 18px; }
+.card--dark { background: var(--field); color: var(--field-ink); border-color: var(--field); }
+.card--dark > p { color: var(--field-muted); }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.btn--on-dark { background: transparent; color: var(--field-ink); border-color: var(--field-muted); }
+.btn--on-dark:hover { background: var(--field-ink); color: var(--field); border-color: var(--field-ink); }
+
+.account-intro { color: var(--muted); }
 .account-user { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; margin: 0 0 12px; }
 .link-btn {
   min-height: 44px; padding: 0; background: none; border: 0;
@@ -168,7 +197,14 @@ select:hover { border-color: var(--muted); }
 .input:hover { border-color: var(--muted); }
 .code-input { font: .82rem/1.5 var(--code); tab-size: 4; resize: vertical; min-height: 16em; white-space: pre; overflow-wrap: normal; }
 
-/* Rules */
-.rules { padding-top: clamp(56px, 7vw, 100px); padding-bottom: clamp(56px, 7vw, 100px); }
-.rules > * { max-width: 40em; }
+/* Rules: a short list of facts next to the function you write */
+.rules {
+  display: grid; gap: 32px;
+  padding-top: clamp(40px, 6vw, 72px); padding-bottom: clamp(56px, 7vw, 100px);
+}
+@media (min-width: 860px) { .rules { grid-template-columns: 1fr 1fr; gap: 48px; } }
+.facts { display: grid; grid-template-columns: auto 1fr; gap: 10px 20px; margin: 0; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; }
+.rules .code { margin: 0 0 1em; max-height: none; }
 .rules p { margin: 0 0 1em; }

@@ -55,6 +55,9 @@ const REASONS = {
   timeout: "Se pasó del tiempo",
 };
 
+// Where each seat starts, for screen readers.
+const CORNERS = ["arriba a la izquierda", "arriba a la derecha", "abajo a la izquierda", "abajo a la derecha"];
+
 const $ = (id) => document.getElementById(id);
 const els = {
   runner: null,
@@ -65,12 +68,13 @@ const els = {
   play: $("play"),
   speed: $("speed"),
   status: $("status"),
-  scores: $("scores"),
   playback: $("playback"),
   toggle: $("toggle"),
   scrub: $("scrub"),
   turn: $("turn"),
   chart: $("chart"),
+  chartBox: $("chart-box"),
+  playClaude: $("play-claude"),
   codeDialog: $("code-dialog"),
   codeTitle: $("code-title"),
   codeBody: $("code-body"),
@@ -88,10 +92,10 @@ const state = {
   runnerReady: false,
   pythonReady: false,
   matchId: 0,
-  names: [],
   frames: [],
   deathTurns: [],
   simulating: false,
+  speed: 60, // turns per second; 0 jumps to the last simulated turn
   playhead: 0,
   playing: false,
   lastTick: 0,
@@ -171,38 +175,70 @@ function bootRunner() {
   }
 }
 
+// Each seat row is both the bot picker and that bot's score during a match.
 function renderSeats() {
   els.seats.replaceChildren();
   DEFAULT_SEATS.forEach((fallback, i) => {
     const id = `seat-${i + 1}`;
-    const row = document.createElement("div");
+    const row = document.createElement("li");
     row.className = "seat";
+    row.style.setProperty("--color", `var(--p${i + 1})`);
 
-    const swatch = document.createElement("span");
-    swatch.className = "swatch";
-    swatch.style.setProperty("--color", `var(--p${i + 1})`);
-    swatch.setAttribute("aria-hidden", "true");
+    const bar = document.createElement("span");
+    bar.className = "seat-bar";
+    bar.setAttribute("aria-hidden", "true");
 
     const label = document.createElement("label");
     label.className = "sr-only";
     label.htmlFor = id;
-    label.textContent = `Jugador ${i + 1}`;
+    label.textContent = `Jugador ${i + 1}, ${CORNERS[i]}`;
 
     const select = document.createElement("select");
     select.id = id;
 
+    const cells = document.createElement("span");
+    cells.className = "seat-cells";
+
+    const meta = document.createElement("span");
+    meta.className = "seat-meta";
+    const stateEl = document.createElement("span");
+    stateEl.className = "seat-state";
     const view = document.createElement("button");
     view.type = "button";
-    view.className = "btn btn--ghost seat-code";
-    view.textContent = "Código";
-    view.setAttribute("aria-label", `Ver el código del jugador ${i + 1}`);
+    view.className = "link-btn seat-code";
     view.addEventListener("click", () => showCode(select.value));
+    meta.append(stateEl, view);
 
-    row.append(swatch, label, select, view);
+    // Numbers from a match belong to the bot that played it, not to a new pick.
+    select.addEventListener("change", () => {
+      clearSeat(row);
+      updateCodeButton(row);
+    });
+
+    row.append(bar, label, select, cells, meta);
     els.seats.append(row);
     const name = state.bots.includes(fallback) ? fallback : state.bots[i % state.bots.length];
     fillSeat(select, i === 0 && state.challenge.length ? `challenge:${state.challenge[0]}` : `repo:${name}`);
   });
+}
+
+function seatRows() {
+  return [...els.seats.querySelectorAll(".seat")];
+}
+
+function updateCodeButton(row) {
+  const select = row.querySelector("select");
+  const button = row.querySelector(".seat-code");
+  button.textContent = select.value.startsWith("challenge:") ? "Código secreto" : "Ver código";
+  const option = select.selectedOptions[0];
+  button.setAttribute("aria-label", `${button.textContent}: ${option ? option.textContent : "bot"}`);
+}
+
+function clearSeat(row) {
+  delete row.dataset.match;
+  row.classList.remove("is-leader", "is-dead");
+  row.querySelector(".seat-cells").textContent = "";
+  row.querySelector(".seat-state").textContent = "";
 }
 
 // Rebuilds a seat's options and keeps `wanted` selected if it still exists.
@@ -230,6 +266,8 @@ function fillSeat(select, wanted) {
   );
   select.value = wanted;
   if (select.value !== wanted) select.selectedIndex = 0;
+  const row = select.closest(".seat");
+  if (row) updateCodeButton(row);
 }
 
 function challengeLabel(name) {
@@ -342,7 +380,6 @@ async function startMatch(event) {
   // If a match or a test is still running, the runner stops it before starting this one.
   finishTest({ ok: false, message: "La prueba se interrumpió porque empezó una partida." });
   state.matchId += 1;
-  state.names = bots.map((bot) => bot.label);
   state.frames = [];
   state.deathTurns = [null, null, null, null];
   state.simulating = true;
@@ -350,7 +387,11 @@ async function startMatch(event) {
   state.carry = 0;
   els.boardMsg.hidden = true;
   els.playback.hidden = false;
-  els.chart.hidden = false;
+  els.chartBox.hidden = false;
+  for (const row of seatRows()) {
+    clearSeat(row);
+    row.dataset.match = String(state.matchId);
+  }
   els.play.textContent = "Reiniciar";
   setStatus("Simulando…");
   setPlaying(true);
@@ -467,7 +508,7 @@ function setPlaying(playing) {
 function tick(now) {
   if (!state.playing) return;
   const last = state.frames.length - 1;
-  const speed = Number(els.speed.value);
+  const speed = state.speed;
 
   if (speed === 0) {
     state.playhead = last;
@@ -659,35 +700,16 @@ function drawChart(index) {
 function renderScores(frame) {
   const counts = frame.counts;
   const best = Math.max(...counts);
-
-  const items = state.names.map((name, i) => {
+  seatRows().forEach((row, i) => {
+    if (row.dataset.match !== String(state.matchId)) return;
     const p = frame.players[i];
-    const li = document.createElement("li");
-    li.className = "score";
-    if (!p.alive) li.classList.add("is-dead");
-    if (counts[i] === best && best > 1) li.classList.add("is-leader");
-
-    const swatch = document.createElement("span");
-    swatch.className = "swatch";
-    swatch.style.setProperty("--color", `var(--p${i + 1})`);
-    swatch.setAttribute("aria-hidden", "true");
-
-    const nameEl = document.createElement("span");
-    nameEl.className = "score-name";
-    nameEl.textContent = name;
-
-    const cells = document.createElement("span");
-    cells.className = "score-cells";
-    cells.textContent = `${counts[i]} casillas`;
-
-    const stateEl = document.createElement("span");
-    stateEl.className = "score-state";
-    stateEl.textContent = p.alive ? "Sigue en juego" : deathText(p.reason, state.deathTurns[i]);
-
-    li.append(swatch, nameEl, cells, stateEl);
-    return li;
+    row.classList.toggle("is-dead", !p.alive);
+    row.classList.toggle("is-leader", counts[i] === best && best > 1);
+    row.querySelector(".seat-cells").textContent = String(counts[i]);
+    row.querySelector(".seat-state").textContent = p.alive
+      ? "Sigue en juego"
+      : deathText(p.reason, state.deathTurns[i]);
   });
-  els.scores.replaceChildren(...items);
 }
 
 function deathText(reason, turn) {
@@ -717,6 +739,22 @@ for (const button of document.querySelectorAll("dialog [data-close]")) {
   button.addEventListener("click", () => button.closest("dialog").close());
 }
 els.toggle.addEventListener("click", onToggle);
+els.speed.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-speed]");
+  if (!button) return;
+  for (const b of els.speed.querySelectorAll("button")) b.setAttribute("aria-pressed", String(b === button));
+  state.speed = Number(button.dataset.speed);
+});
+// "Jugar contra Claude": Claude in seat 1, back to the board, and play.
+els.playClaude.addEventListener("click", () => {
+  const first = els.seats.querySelector("select");
+  if (first && state.challenge.length) {
+    first.value = `challenge:${state.challenge[0]}`;
+    first.dispatchEvent(new Event("change"));
+  }
+  els.canvas.scrollIntoView({ block: "center" });
+  if (state.pythonReady) els.setup.requestSubmit();
+});
 els.scrub.addEventListener("input", onScrub);
 addEventListener("resize", () => {
   if (state.frames[state.playhead]) {
